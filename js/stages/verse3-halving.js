@@ -1,5 +1,5 @@
 // Verse 3, the halving: a stack of 50 orange coins is cut in half on the beats (50, 25, 12.5, 6.25),
-// then a tray of 21,000,000 fills with halves that never reach its edge.
+// then a glass vessel etched 21,000,000 fills with molten orange, each pour half of what's left: it never reaches the brim.
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { studioEnv } from '../film.js';
@@ -10,7 +10,7 @@ import { clamp, lerp, hash1, smooth, easeOut, easeIn, easeInOut } from '../util.
 
 export const HR = 0.9, HT = 0.1;   // stack coin radius and thickness
 export const PLINTH = 1.0;         // plinth top
-export const TRAY = 4.0;           // tray inner size
+export const TANK = { w: 1.66, y0: 0.55, h: 2.44 }; // vessel inner width, inner floor, inner height
 const N = 50;
 
 function plaqueTexture(txt) {
@@ -22,27 +22,34 @@ function plaqueTexture(txt) {
   return canvasTex(c);
 }
 
-let BLANK = null;
-function tileTexture(txt) {
-  if (!txt && BLANK) return BLANK;
-  const c = canvas(txt ? 512 : 16, txt ? 512 : 16), g = c.getContext('2d');
-  g.fillStyle = '#ffffff'; g.fillRect(0, 0, 512, 512);
-  if (txt) {
-    g.fillStyle = '#6a6a6a'; g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.font = `800 ${txt.length > 3 ? 150 : 210}px "Figtree"`;
-    g.fillText(txt, 256, 270);
-  }
-  const t = canvasTex(c);
-  if (!txt) BLANK = t;
+// Molten metal: bright convection veins in a deep orange body, darker crust between.
+function lavaTexture() {
+  const S = 512, c = canvas(S, S), g = c.getContext('2d');
+  const R = (i) => hash1(i * 7 + 3);
+  g.fillStyle = 'rgb(150,48,6)'; g.fillRect(0, 0, S, S);
+  const blob = (i, col, rmin, rmax, blur) => {
+    const x = R(i) * S, y = R(i + 1) * S, r = rmin + R(i + 2) * (rmax - rmin);
+    g.filter = `blur(${blur}px)`;
+    g.fillStyle = col;
+    for (const dx of [-S, 0, S]) for (const dy of [-S, 0, S]) { g.beginPath(); g.ellipse(x + dx, y + dy, r, r * (0.5 + R(i + 3)), R(i + 4) * 3, 0, Math.PI * 2); g.fill(); }
+  };
+  for (let i = 0; i < 70; i++) blob(i * 11, 'rgba(70,14,0,0.55)', 20, 60, 10);
+  for (let i = 0; i < 90; i++) blob(i * 13 + 5000, 'rgba(255,150,40,0.45)', 6, 26, 5);
+  for (let i = 0; i < 60; i++) blob(i * 17 + 9000, 'rgba(255,215,120,0.5)', 2, 7, 2);
+  g.filter = 'none';
+  const t = canvasTex(c, { repeat: true });
   return t;
 }
 
-function rimText() {
-  const c = canvas(2048, 384), g = c.getContext('2d');
-  g.fillStyle = '#000'; g.fillRect(0, 0, 2048, 384);
-  g.fillStyle = '#ffb347'; g.textAlign = 'center'; g.textBaseline = 'middle';
+// Frosted etching on glass: the total, and a fine line at the brim.
+function etchTexture() {
+  const c = canvas(2048, 512), g = c.getContext('2d');
+  g.clearRect(0, 0, 2048, 512);
+  g.fillStyle = 'rgba(236,240,244,0.92)'; g.textAlign = 'center'; g.textBaseline = 'middle';
   g.font = '700 300px "Cormorant Garamond"';
-  g.fillText('21,000,000', 1024, 200);
+  g.shadowColor = 'rgba(255,255,255,0.5)'; g.shadowBlur = 6;
+  g.fillText('21,000,000', 1024, 300);
+  g.fillRect(40, 18, 1968, 10);
   return canvasTex(c, { aniso: 16 });
 }
 
@@ -97,70 +104,64 @@ export async function verse3HalvingStage(film) {
   const sparks = new Motes({ count: 300, size: 0.03, color: [1, 0.62, 0.22], gain: 7 });
   scene.add(sparks);
 
-  // ---- the tray
-  const tray = new THREE.Group();
-  scene.add(tray);
-  const steel = new THREE.MeshPhysicalMaterial({ color: 0x151515, metalness: 0.9, roughness: 0.35 });
-  const base = new THREE.Mesh(new THREE.BoxGeometry(TRAY + 0.5, 0.12, TRAY + 0.5), steel);
-  base.position.y = 0.06; base.receiveShadow = true;
-  tray.add(base);
-  const wallH = 0.32, wallT = 0.25;
-  const walls = [
-    [TRAY + 0.5, wallT, 0, -(TRAY + wallT) / 2], [TRAY + 0.5, wallT, 0, (TRAY + wallT) / 2],
-    [wallT, TRAY, -(TRAY + wallT) / 2, 0], [wallT, TRAY, (TRAY + wallT) / 2, 0],
-  ].map(([w, d, x, z]) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, d), steel); m.position.set(x, 0.12 + wallH / 2, z); m.castShadow = m.receiveShadow = true; tray.add(m); return m; });
-  // the inner edge glows: the limit
-  const edgeMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 0.5, 0.1).multiplyScalar(1.5) });
-  const edgeLines = [[TRAY, 0.02, 0, -TRAY / 2], [TRAY, 0.02, 0, TRAY / 2], [0.02, TRAY, -TRAY / 2, 0], [0.02, TRAY, TRAY / 2, 0]].map(([w, d, x, z]) => {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w + 0.02, 0.02, d + 0.02), edgeMat); m.position.set(x, 0.12 + wallH + 0.001, z); tray.add(m); return m;
+  // ---- the vessel: a glass tank on a black stone plinth, filled with molten orange
+  const vessel = new THREE.Group();
+  scene.add(vessel);
+  const stone = new THREE.MeshPhysicalMaterial({ color: 0x070707, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.1, metalness: 0.1 });
+  const base = new THREE.Mesh(new RoundedBoxGeometry(2.5, 0.5, 2.5, 3, 0.03), stone);
+  base.position.y = 0.25; base.castShadow = base.receiveShadow = true;
+  vessel.add(base);
+  const glass = new THREE.MeshPhysicalMaterial({
+    color: 0xffffff, metalness: 0, roughness: 0.04, transmission: 1, thickness: 0.05, ior: 1.5,
+    specularIntensity: 1, clearcoat: 1, clearcoatRoughness: 0.03, envMapIntensity: 1.4, side: THREE.DoubleSide,
   });
-  // A wide ledge along the front carries the total, engraved large and lit, facing up at the camera.
-  const LEDGE_D = 1.05;
-  const ledge = new THREE.Mesh(new THREE.BoxGeometry(TRAY + 0.5, 0.26, LEDGE_D), steel);
-  ledge.position.set(0, 0.13, TRAY / 2 + wallT + LEDGE_D / 2);
-  ledge.castShadow = ledge.receiveShadow = true;
-  tray.add(ledge);
-  const rimLabel = new THREE.Mesh(new THREE.PlaneGeometry(3.9, 3.9 * 384 / 2048), new THREE.MeshBasicMaterial({ map: rimText(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, color: new THREE.Color(1.25, 1.25, 1.25) }));
-  rimLabel.rotation.x = -Math.PI / 2;
-  rimLabel.position.set(0, 0.262, TRAY / 2 + wallT + LEDGE_D / 2);
-  tray.add(rimLabel);
-
-  // Tiles: halve what is left, alternating direction, toward the front-right corner.
-  const tileGeo = new RoundedBoxGeometry(1, 1, 1, 2, 0.08);
-  const LABELS = ['50', '25', '12.5', '6.25', '3.125'];
-  const tiles = [];
-  {
-    let x0 = -TRAY / 2, x1 = TRAY / 2, z0 = -TRAY / 2, z1 = TRAY / 2;
-    for (let i = 0; i < 16; i++) {
-      let r;
-      if (i % 2 === 0) { const xm = (x0 + x1) / 2; r = [x0, xm, z0, z1]; x0 = xm; } else { const zm = (z0 + z1) / 2; r = [x0, x1, z0, zm]; z0 = zm; }
-      const shade = 1 - i * 0.045;
-      const mat = new THREE.MeshPhysicalMaterial({
-        color: new THREE.Color().setRGB(0.97, 0.33 + i * 0.02, 0.03 + i * 0.008).multiplyScalar(Math.max(0.55, shade)),
-        metalness: 1, roughness: 0.5, map: tileTexture(LABELS[i]),
-      });
-      const m = new THREE.Mesh(tileGeo, mat);
-      m.castShadow = m.receiveShadow = true;
-      tray.add(m);
-      const gap = Math.min(0.03, (r[1] - r[0]) * 0.04);
-      tiles.push({ m, mat, cx: (r[0] + r[1]) / 2, cz: (r[2] + r[3]) / 2, w: r[1] - r[0] - gap, d: r[3] - r[2] - gap });
-    }
+  const GW = TANK.w + 0.1, GT = 0.05, top = TANK.y0 + TANK.h;
+  for (const [w, h, d, x, y, z] of [
+    [GW, TANK.h + 0.05, GT, 0, (0.5 + top) / 2, GW / 2 - GT / 2], [GW, TANK.h + 0.05, GT, 0, (0.5 + top) / 2, -GW / 2 + GT / 2],
+    [GT, TANK.h + 0.05, GW - 2 * GT, GW / 2 - GT / 2, (0.5 + top) / 2, 0], [GT, TANK.h + 0.05, GW - 2 * GT, -GW / 2 + GT / 2, (0.5 + top) / 2, 0],
+    [GW, 0.05, GW, 0, 0.525, 0],
+  ]) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), glass);
+    m.position.set(x, y, z);
+    vessel.add(m);
   }
-  const dust = new Motes({ count: 200, size: 0.025, color: [1, 0.7, 0.35], gain: 4 });
-  tray.add(dust);
+  // the glass edges catch the light
+  const edgeGlass = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(GW, TANK.h + 0.05, GW)), new THREE.LineBasicMaterial({ color: new THREE.Color(0.85, 0.92, 0.95), transparent: true, opacity: 0.55 }));
+  edgeGlass.position.y = (0.5 + top) / 2;
+  vessel.add(edgeGlass);
+  // the etching, on the outside of the front pane
+  const etch = new THREE.Mesh(new THREE.PlaneGeometry(1.56, 0.39), new THREE.MeshBasicMaterial({ map: etchTexture(), transparent: true, depthWrite: false }));
+  etch.position.set(0, top - 0.21, GW / 2 + 0.002);
+  vessel.add(etch);
+  // the molten fill: a glowing body, a hotter surface
+  const lava = lavaTexture();
+  const melt = new THREE.Mesh(new THREE.BoxGeometry(TANK.w - 0.01, 1, TANK.w - 0.01), new THREE.MeshStandardMaterial({ color: 0x1a0500, emissive: new THREE.Color(1, 0.62, 0.42), emissiveMap: lava, emissiveIntensity: 0.95, roughness: 0.45 }));
+  vessel.add(melt);
+  const surfLava = lava.clone(); surfLava.repeat.set(1.3, 1.3); surfLava.needsUpdate = true;
+  const surf = new THREE.Mesh(new THREE.PlaneGeometry(TANK.w - 0.012, TANK.w - 0.012), new THREE.MeshStandardMaterial({ color: 0x2a0a00, emissive: new THREE.Color(1, 0.75, 0.5), emissiveMap: surfLava, emissiveIntensity: 1.35, roughness: 0.25 }));
+  surf.rotation.x = -Math.PI / 2;
+  vessel.add(surf);
+  const meltLight = new THREE.PointLight(0xff7a20, 0, 9, 1.6);
+  vessel.add(meltLight);
+  // the pour: a falling stream of molten metal, thinner each time
+  const streamLava = lava.clone(); streamLava.needsUpdate = true;
+  const stream = new THREE.Mesh(new THREE.CylinderGeometry(1, 0.85, 1, 24, 1, true), new THREE.MeshBasicMaterial({ map: streamLava, color: new THREE.Color(1.5, 1.15, 0.9) }));
+  vessel.add(stream);
+  const splash = new Motes({ count: 260, size: 0.03, color: [1, 0.6, 0.2], gain: 6 });
+  vessel.add(splash);
 
   const dummy = new THREE.Object3D();
   const jit = (j, k) => (hash1(j * 7 + k) - 0.5);
 
   const S = {
-    scene, key, rim, floor, plinth, plaques, coins, slash, sparks, tray, tiles, edgeLines, rimLabel,
+    scene, key, rim, floor, plinth, plaques, coins, slash, sparks, vessel, melt, surf, stream, etch,
     fx: { bloom: 0.45, threshold: 1.0, bloomRadius: 0.4, grain: 0.04, vignette: 0.5, tint: [1.02, 0.99, 0.95] },
     update(ctx) {
       plinth.visible = true;
       for (const p of plaques) p.visible = false;
       coins.visible = true; coins.count = 0;
       slash.visible = false; sparks.visible = false;
-      tray.visible = false;
+      vessel.visible = false;
       key.position.set(-4, 9, 6); key.target.position.set(0, 2, 0); key.intensity = 9;
       scene.environmentIntensity = 1.0;
     },
@@ -224,34 +225,43 @@ export async function verse3HalvingStage(film) {
       return HT * h;
     },
 
-    // drops: song times each tile lands.
-    trayAt(t, drops) {
+    // pours: song times each pour starts. Pour k fills half of what is left, so the level runs 1/2, 3/4, 7/8...
+    vesselAt(t, pours) {
       plinth.visible = false;
       coins.visible = false;
-      tray.visible = true;
-      key.position.set(-3, 9, 5); key.target.position.set(0.8, 0, 0.8);
-      let last = -1;
-      tiles.forEach((tl, i) => {
-        const td = drops[i];
-        const dt = td === undefined ? -1 : t - td;
-        tl.m.visible = dt > -0.22;
-        if (!tl.m.visible) return;
-        const fall = dt < 0 ? easeIn(clamp(1 + dt / 0.22), 2) : 1;
-        const bounce = dt > 0 ? Math.abs(Math.sin(dt * 30)) * Math.exp(-dt * 12) * 0.05 : 0;
-        const th = Math.min(0.14, 0.3 * Math.sqrt(tl.w * tl.d));
-        tl.m.scale.set(tl.w, th, tl.d);
-        tl.m.position.set(tl.cx, 0.12 + th / 2 + (1 - fall) * 1.6 + bounce, tl.cz);
-        tl.mat.emissive = tl.mat.emissive || new THREE.Color();
-        tl.mat.emissive.setRGB(1, 0.45, 0.08);
-        tl.mat.emissiveIntensity = dt > 0 ? 0.35 * Math.exp(-dt * 6) : 0;
-        if (dt >= 0) last = i;
+      vessel.visible = true;
+      key.position.set(-3.5, 8, 5); key.target.position.set(0, 1.4, 0); key.intensity = 7;
+      scene.environmentIntensity = 0.8;
+      let level = 0, active = -1;
+      pours.forEach((tp, k) => {
+        const dur = Math.max(0.09, 0.3 * Math.pow(0.8, k));
+        const f = clamp((t - tp) / dur);
+        const before = 1 - Math.pow(0.5, k), after = 1 - Math.pow(0.5, k + 1);
+        if (t >= tp) { level = lerp(before, after, easeOut(f, 2)); if (f < 1) active = k; }
       });
-      const lt = last >= 0 ? drops[last] : -9;
-      const tl = tiles[Math.max(0, last)];
-      dust.burst(t - lt, [tl.cx, 0.2, tl.cz], { power: 0.25 * Math.sqrt(tl.w * tl.d), spread: 0.4, up: 0.8, life: 0.5, gravity: 2, seed: last + 9 });
-      edgeMat.color.set(1, 0.5, 0.1).multiplyScalar(1.0 + 0.6 * Math.exp(-(t - lt) * 5));
-      scene.environmentIntensity = 0.4;
-      key.intensity = 4.5;
+      const hLvl = Math.max(0.002, level * TANK.h);
+      melt.visible = level > 0;
+      melt.scale.set(1, hLvl, 1);
+      lava.repeat.set(1, hLvl / TANK.w); // keep the molten pattern from stretching as the level rises
+      melt.position.y = TANK.y0 + hLvl / 2;
+      surf.visible = level > 0;
+      surf.position.y = TANK.y0 + hLvl + 0.001;
+      meltLight.position.set(0, TANK.y0 + hLvl + 0.3, 0.3);
+      meltLight.intensity = 4 * Math.sqrt(level);
+      surfLava.offset.set(t * 0.02, t * 0.013);
+      stream.visible = active >= 0;
+      if (active >= 0) {
+        const r = 0.11 * Math.sqrt(Math.pow(0.5, active));
+        const yTop = 7, yBot = TANK.y0 + hLvl;
+        stream.scale.set(r, yTop - yBot, r);
+        streamLava.repeat.set(0.25, (yTop - yBot) * 0.8);
+        streamLava.offset.set(0, t * 3.5); // the metal pours downward
+        stream.position.set(Math.sin(t * 9) * 0.01, (yTop + yBot) / 2, 0.1);
+      }
+      const lastStart = pours.filter((tp) => tp <= t).pop();
+      const k = pours.indexOf(lastStart);
+      splash.visible = lastStart !== undefined;
+      if (splash.visible) splash.burst(t - lastStart, [0, TANK.y0 + hLvl, 0.1], { power: 0.5 * Math.pow(0.8, k), spread: 0.6, up: 1.0, life: 0.5, gravity: 5, seed: 20 + k });
     },
   };
   return S;

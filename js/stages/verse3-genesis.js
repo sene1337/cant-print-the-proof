@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { studioEnv } from '../film.js';
 import { blockFace } from '../tex.js';
-import { canvas, canvasTex, Motes, glowCard, fmt } from '../props/verse3-kit.js';
+import { canvas, canvasTex, Motes, sparkCard, fmt } from '../props/verse3-kit.js';
 import { Dust } from '../props/dust.js';
 import { clamp, lerp, hash1, smooth, easeOut, easeIn, easeInOut } from '../util.js';
 
@@ -127,7 +127,7 @@ export async function verse3GenesisStage(film) {
     edges.push({ m, a: C(...p), b: C(...q), depth: dist(p) });
   }
   const UP = new THREE.Vector3(0, 1, 0), tmp = new THREE.Vector3();
-  const spark = glowCard([1, 0.65, 0.3], 0.6);
+  const spark = sparkCard([1, 0.72, 0.4], 0.5);
   scene.add(spark);
   const sparkLight = new THREE.PointLight(0xff9a40, 0, 6, 2);
   scene.add(sparkLight);
@@ -158,7 +158,7 @@ export async function verse3GenesisStage(film) {
       tmp.copy(start).multiplyScalar(GS);
       spark.position.copy(tmp);
       spark.material.opacity = sp * (t < tFaces ? 1 : clamp(1 - (t - tFaces) / 0.3));
-      spark.scale.setScalar(0.35 + 0.25 * Math.sin(t * 20) * 0.2 + 0.4 * sp);
+      spark.scale.setScalar(0.42 + 0.04 * Math.sin(t * 23));
       sparkLight.position.copy(tmp); sparkLight.intensity = 1.2 * sp * clamp(1 - (t - tFaces) / 0.25);
       for (const e of edges) setEdge(e, clamp(ek - e.depth));
       const fr = clamp((t - tFaces) / 0.55);
@@ -175,7 +175,8 @@ export async function verse3GenesisStage(film) {
       const d = t - tStamp;
       text.visible = d > -0.12;
       const k = clamp((d + 0.12) / 0.12);
-      text.scale.setScalar(lerp(1.7, 1, easeIn(k, 2.2)));
+      // slams down from just above the face, never wider than the face's frame
+      text.scale.setScalar(lerp(1.07, 1, easeIn(k, 2.2)));
       const heat = d > 0 ? Math.exp(-d * 6) : 0;
       textMat.color.setRGB(1 + heat * 0.8, 0.9 + heat * 0.6, 0.8 + heat * 0.5).multiplyScalar(0.25 + 0.75 * k);
       for (const m of mats) m.emissiveIntensity = 2.2 + (d > 0 ? 1.2 * Math.exp(-d * 6) : 0);

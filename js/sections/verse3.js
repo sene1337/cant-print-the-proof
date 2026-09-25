@@ -8,7 +8,7 @@ import { verse3BankStage } from '../stages/verse3-bank.js';
 import { verse3GenesisStage, GS } from '../stages/verse3-genesis.js';
 import { verse3RoomStage, LINE } from '../stages/verse3-room.js';
 import { verse3ChainStage } from '../stages/verse3-chain.js';
-import { verse3HalvingStage, HT, PLINTH, TRAY } from '../stages/verse3-halving.js';
+import { verse3HalvingStage, HT, PLINTH, TANK } from '../stages/verse3-halving.js';
 import { verse3MoonStage, KEY_AT } from '../stages/verse3-moon.js';
 
 // Stage builders this section owns: { id: async (film) => stage }. Ids must be unique across the film.
@@ -70,9 +70,10 @@ export function shots(S, T) {
   S(W('Solved'), 'verse3-coin', orbitCam({ target: [0, 1.5, 0], dist: [6.0, 4.9], az: [-10, 4], el: [7, 3], fov: 32 }),
     (s, c) => { s.doubleSpend(c.t, { tSplit: beatAfter(W('Solved')), tFail: W('double-spend,') }); });
 
-  // ---- 128.74 "took the bank out the middle": two nodes paying through a bank; the bank drops away, they connect.
-  S(W('took'), 'verse3-bank', orbitCam({ target: [0, 1.0, 0], dist: [6.6, 6.0], az: [-9, 3], el: [11, 7], fov: 32 }),
-    (s, c) => { s.play(c.t, { t0: W('took') - 0.05, tDrop: W('bank', 128.8) + 0.02, tSnap: W('out', 129) + 0.02, tMeet: W('middle,') }); });
+  // ---- 128.74 "took the bank out the middle": a marble bank stands on a trapdoor; the floor drops it into the dark,
+  // slams shut on "middle", and the orange coin rolls over to stop where the bank stood.
+  S(W('took'), 'verse3-bank', orbitCam({ target: [0, 0.85, 0], dist: [6.9, 6.1], az: [-10, 4], el: [9, 7], fov: 32 }),
+    (s, c) => { s.play(c.t, { tDrop: W('bank', 128.8) + 0.02, tShut: W('middle,') - 0.02 }); });
 
   // ---- 129.90 "no king and no council to shave me a little": the shears that clipped the gold bite and bounce off.
   const tShave = W('shave');
@@ -102,7 +103,7 @@ export function shots(S, T) {
   // ---- 137.94 "Hal Finney was running it the very next day": an old monitor in a dark room types "Running bitcoin".
   const typeTimes = [];
   { let x = 138.3; for (let i = 0; i < LINE.length; i++) { typeTimes.push(x); x += i < 7 ? 0.095 : 0.082; } }
-  S(W('Hal'), 'verse3-room', moveCam({ from: [2.3, 1.4, 3.7], to: [0.3, 1.06, 1.8], look: [0, 0.92, 0.2], look2: [0, 1.02, 0.24], fov: [34, 30], ease: easeInOut }),
+  S(W('Hal'), 'verse3-room', moveCam({ from: [1.55, 1.3, 2.9], to: [0.3, 1.06, 1.75], look: [0, 0.98, 0.2], look2: [0, 1.02, 0.24], fov: [32, 30], ease: easeInOut }),
     (s, c) => { s.type(c.t, typeTimes); });
 
   // ---- 140.30 "block after block, and it's still ticking away": a block lands on every beat; the chain runs to the horizon.
@@ -136,23 +137,21 @@ export function shots(S, T) {
     cam.fov = 32;
   }, (s, c) => { s.stack(c.t, cuts); });
 
-  // ---- 146.00 "twenty-one million, go on, do the math": halves fill a tray of 21,000,000 and never reach its edge.
+  // ---- 146.00 "twenty-one million, go on, do the math": a glass vessel etched 21,000,000 fills with molten orange,
+  // each pour half of what is left (1/2, 3/4, 7/8...). It never reaches the brim.
   const tTwenty = W('twenty-one', 145.5);
-  const drops = [beatAfter(tTwenty), W('million,', 146), W('go', 146.5), W('on,', 147), W('do', 147.5), 148.0, W('the', 148), W('math.')];
-  for (let i = 0, x = drops[drops.length - 1]; i < 8; i++) { x += 0.06 * Math.pow(0.8, i); drops.push(x); }
-  const corner = [TRAY / 2, 0.26, TRAY / 2];
+  const pours = [beatAfter(tTwenty), W('million,', 146), W('go', 146.5), W('on,', 147), W('do', 147.5), 148.0, W('the', 148), W('math.')];
   S(tTwenty, 'verse3-halving', (c, cam) => {
-    const u = easeInOut(c.u);
-    const k = Math.pow(c.u, 1.6);
+    const k = easeInOut(c.u), k2 = Math.pow(c.u, 1.5);
     const z = aspectZoom(c);
-    // start on the whole tray and its engraved ledge, end in the corner the halves never reach
-    const target = [lerp(0, corner[0] - 0.12, k), 0.26, lerp(0.8, corner[2] - 0.12, k)];
-    const d = Math.exp(lerp(Math.log(10.2), Math.log(1.25), k)) * z;
-    const az = (lerp(18, 32, u) * Math.PI) / 180, el = (lerp(58, 50, u) * Math.PI) / 180;
+    // end looking down at the brim: the molten surface a sliver below it, the etching just beneath
+    const target = [0, lerp(1.72, TANK.y0 + TANK.h - 0.12, k2), 0.15 * k2];
+    const d = lerp(7.4, 2.7, k2) * z;
+    const az = (lerp(24, 14, k) * Math.PI) / 180, el = (lerp(14, 24, k) * Math.PI) / 180;
     cam.position.set(target[0] + d * Math.sin(az) * Math.cos(el), target[1] + d * Math.sin(el), target[2] + d * Math.cos(az) * Math.cos(el));
     cam.lookAt(...target);
     cam.fov = 32;
-  }, (s, c) => { s.trayAt(c.t, drops); }, { bloom: 0.3 });
+  }, (s, c) => { s.vesselAt(c.t, pours); }, { bloom: 0.35 });
 
   // ---- 148.62 "Property in cyberspace, keys you can carry": an orange key on a string turns in front of the moon.
   // (Verse 1 opens on a cowrie on a string in front of this moon; same framing, new money.)
@@ -161,14 +160,16 @@ export function shots(S, T) {
     const z = aspectZoom(c);
     const tgt = [KEY_AT[0], KEY_AT[1] - 0.12, KEY_AT[2]];
     const d = lerp(1.3, 1.0, u) * z;
-    const az = (lerp(-6, 4, u) * Math.PI) / 180, el = (lerp(-2, 0, u) * Math.PI) / 180;
+    // a touch below the key, looking up: the horizon sits low, like verse 1's
+    const az = (lerp(-6, 4, u) * Math.PI) / 180, el = (lerp(-4, -3, u) * Math.PI) / 180;
     cam.position.set(tgt[0] + d * Math.sin(az) * Math.cos(el), tgt[1] + d * Math.sin(el), tgt[2] + d * Math.cos(az) * Math.cos(el));
     // narrow frames: the moon rides higher and nearer the key so both stay in the picture
     const wide = clamp((c.aspect - 0.5625) / (16 / 9 - 0.5625));
     cam.lookAt(tgt[0] - (0.16 + 0.02 * c.u) * wide, tgt[1] + 0.04 + 0.1 * (1 - wide), tgt[2]);
     cam.fov = 28;
-    s.moonAz = lerp(-3, -14, wide); s.moonEl = lerp(13, 7.5, wide); s.moonSize = lerp(13, 16, wide);
-    s.place(cam);
+    s.moonAz = lerp(-3, -14, wide); s.moonEl = lerp(15, 10, wide); s.moonSize = lerp(12, 15, wide);
+    cam.updateMatrixWorld();
+    s.place(cam, c.t, c.film.height);
   }, (s, c) => { s.hang(c.t, c.lt, W('keys', 149)); });
 
   // ---- 151.00 "granite at the bottom, and the rules never vary": tilt down past the chain to the bedrock and its carved rule.

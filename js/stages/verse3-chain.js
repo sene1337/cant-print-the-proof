@@ -70,7 +70,31 @@ function graniteMaps(seed = 3, S = 1024) {
   const calmMap = canvasTex(calmC, { repeat: true, aniso: 16 });
   const calmNormal = normalFromHeight(hgt, 0.7, 3.5);
   calmNormal.wrapS = calmNormal.wrapT = THREE.RepeatWrapping;
-  return { map, normal, calmMap, calmNormal };
+  // Hewn rock: overlapping angular chips and a few cracks, plus the crystal grain, as one normal map.
+  // Detail lives in the texture, so the cliff mesh can be smooth and never show its triangles.
+  const rk = canvas(S, S), rg = rk.getContext('2d');
+  rg.fillStyle = '#808080'; rg.fillRect(0, 0, S, S);
+  const chip = (x, y, r, v) => {
+    const n = 4 + Math.floor(R() * 3), a0 = R() * Math.PI;
+    const gd = rg.createLinearGradient(x - r, y - r, x + r, y + r);
+    gd.addColorStop(0, `rgb(${v + 22},${v + 22},${v + 22})`); gd.addColorStop(1, `rgb(${v - 22},${v - 22},${v - 22})`);
+    rg.fillStyle = gd;
+    for (const dx of [-S, 0, S]) for (const dy of [-S, 0, S]) {
+      rg.beginPath();
+      for (let i = 0; i <= n; i++) {
+        const a = a0 + (i / n) * Math.PI * 2 + (R() - 0.5) * 0.5, rr = r * (0.7 + R() * 0.5);
+        const px = x + dx + Math.cos(a) * rr, py = y + dy + Math.sin(a) * rr;
+        i ? rg.lineTo(px, py) : rg.moveTo(px, py);
+      }
+      rg.fill();
+    }
+  };
+  for (let i = 0; i < 160; i++) chip(R() * S, R() * S, 70 + R() * 190, 90 + Math.floor(R() * 80));
+  for (let i = 0; i < 160; i++) chip(R() * S, R() * S, 25 + R() * 50, 100 + Math.floor(R() * 60));
+  rg.globalAlpha = 0.25; rg.drawImage(hgt, 0, 0); rg.globalAlpha = 1;
+  const rockNormal = normalFromHeight(rk, 1.7, 1.2);
+  rockNormal.wrapS = rockNormal.wrapT = THREE.RepeatWrapping;
+  return { map, normal, calmMap, calmNormal, rockNormal };
 }
 
 // Carved inscription on a dressed (polished) granite panel: albedo with dark V-cut letters, plus a height map.
@@ -173,10 +197,10 @@ export async function verse3ChainStage(film) {
 
   // Granite bedrock: a quarried top the chain sits on, and a rough cliff face that drops into the dark.
   const gr = graniteMaps(3);
-  const graniteMat = (rx, ry, rough = 0.62, flat = false, calm = false) => {
+  const graniteMat = (rx, ry, rough = 0.62, flat = false, calm = false, rock = false) => {
     const map = (calm ? gr.calmMap : gr.map).clone(); map.repeat.set(rx, ry); map.needsUpdate = true;
-    const nm = (calm ? gr.calmNormal : gr.normal).clone(); nm.repeat.set(rx, ry); nm.needsUpdate = true;
-    const k = calm ? 0.8 : 1.0;
+    const nm = (rock ? gr.rockNormal : calm ? gr.calmNormal : gr.normal).clone(); nm.repeat.set(rx, ry); nm.needsUpdate = true;
+    const k = rock ? 1.1 : calm ? 0.8 : 1.0;
     return new THREE.MeshStandardMaterial({ map, normalMap: nm, normalScale: new THREE.Vector2(k, k), roughness: rough, metalness: 0, flatShading: flat });
   };
   const L = 300, X0 = -200;
@@ -226,14 +250,14 @@ export async function verse3ChainStage(film) {
   };
   // fine rock near the camera's work, coarse rock beyond
   const nearX0 = XG - 34, nearX1 = XG + 30;
-  const cliffNear = new THREE.Mesh(rockGeo(nearX0, nearX1, -DEPTH, 0, 0.26), graniteMat((nearX1 - nearX0) / TILE, DEPTH / TILE, 0.62, true, true));
+  const cliffNear = new THREE.Mesh(rockGeo(nearX0, nearX1, -DEPTH, 0, 0.26), graniteMat((nearX1 - nearX0) / TILE, DEPTH / TILE, 0.62, false, true, true));
   cliffNear.position.z = FRONT_Z;
   cliffNear.castShadow = cliffNear.receiveShadow = true;
   scene.add(cliffNear);
-  const cliffFar = new THREE.Mesh(rockGeo(X0, nearX0 + 0.01, -DEPTH, 0, 1.0), graniteMat((nearX0 - X0) / TILE, DEPTH / TILE, 0.62, true, true));
+  const cliffFar = new THREE.Mesh(rockGeo(X0, nearX0 + 0.01, -DEPTH, 0, 1.0), graniteMat((nearX0 - X0) / TILE, DEPTH / TILE, 0.62, false, true, true));
   cliffFar.position.z = FRONT_Z;
   scene.add(cliffFar);
-  const cliffFar2 = new THREE.Mesh(rockGeo(nearX1 - 0.01, X0 + L, -DEPTH, 0, 1.0), graniteMat((X0 + L - nearX1) / TILE, DEPTH / TILE, 0.62, true, true));
+  const cliffFar2 = new THREE.Mesh(rockGeo(nearX1 - 0.01, X0 + L, -DEPTH, 0, 1.0), graniteMat((X0 + L - nearX1) / TILE, DEPTH / TILE, 0.62, false, true, true));
   cliffFar2.position.z = FRONT_Z;
   scene.add(cliffFar2);
   const cliff = cliffNear;

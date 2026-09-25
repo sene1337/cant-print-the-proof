@@ -42,8 +42,8 @@ function keyboardTexture() {
 export async function verse3RoomStage(film) {
   await document.fonts.load(`500 ${FONT_PX}px "JetBrains Mono"`);
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x010101);
-  scene.fog = new THREE.FogExp2(0x010101, 0.06);
+  scene.background = new THREE.Color(0x020203);
+  scene.fog = new THREE.FogExp2(0x020203, 0.035);
   scene.environment = studioEnv(film.renderer, [
     { pos: [0, 1, 6], size: [3, 2], color: [1, 0.85, 0.65], intensity: 0.8 },
     { pos: [-6, 3, -1], size: [1.5, 3], color: [0.55, 0.7, 1], intensity: 0.6 },
@@ -51,20 +51,41 @@ export async function verse3RoomStage(film) {
   scene.environmentIntensity = 0.6;
 
   // The only lights: the screen's glow, and a cold streak of night from a window.
-  const glow = new THREE.SpotLight(0xffd9a8, 5, 12, 1.0, 1.0, 2);
+  const glow = new THREE.SpotLight(0xffd9a8, 9, 12, 1.1, 1.0, 2);
   glow.position.set(0, 1.05, 0.55);
   glow.target.position.set(0, 0.2, 3);
   scene.add(glow, glow.target);
-  const night = new THREE.DirectionalLight(0x8fb0ff, 0.9);
+  const night = new THREE.DirectionalLight(0x8fb0ff, 0.7);
   night.position.set(-4, 3.5, -1.5);
   scene.add(night);
+  // Moonlight through venetian blinds, from a window off to the left: stripes on the wall and desk.
+  const blindsTex = (() => {
+    const c = canvas(512, 512), g = c.getContext('2d');
+    g.fillStyle = '#000'; g.fillRect(0, 0, 512, 512);
+    const gr = g.createRadialGradient(256, 256, 40, 256, 256, 250);
+    gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gr;
+    for (let y = 30; y < 480; y += 34) g.fillRect(40, y, 432, 20);
+    g.fillStyle = '#000'; g.fillRect(250, 0, 12, 512); // the window's mullion
+    return canvasTex(c);
+  })();
+  const blinds = new THREE.SpotLight(0x9fb8ff, 70, 30, 0.42, 0.25, 1.2);
+  blinds.position.set(-5.5, 3.6, 2.6);
+  blinds.target.position.set(0.6, 0.9, -2.2);
+  blinds.map = blindsTex;
+  scene.add(blinds, blinds.target);
+  // the back wall of the room, so the monitor sits in a place, not a void
+  const wall = new THREE.Mesh(new THREE.PlaneGeometry(14, 6), new THREE.MeshStandardMaterial({ color: 0x6b6f7a, roughness: 0.92, metalness: 0 }));
+  wall.position.set(0, 1.8, -2.3);
+  wall.receiveShadow = true;
+  scene.add(wall);
   // the tube's own glow falling back on the bezel and the desk
-  const spill = new THREE.PointLight(0xffe0b8, 0.9, 4, 2);
+  const spill = new THREE.PointLight(0xffe0b8, 1.6, 4, 2);
   spill.position.set(1.3, 0.45, 0.9);
   scene.add(spill);
 
   // Desk.
-  const desk = new THREE.Mesh(new THREE.BoxGeometry(7, 0.1, 3.2), new THREE.MeshStandardMaterial({ color: 0x2a1f17, roughness: 0.45, metalness: 0 }));
+  const desk = new THREE.Mesh(new THREE.BoxGeometry(7, 0.1, 3.2), new THREE.MeshStandardMaterial({ color: 0x4a3626, roughness: 0.45, metalness: 0 }));
   desk.position.set(0, -0.05, 0.6);
   desk.receiveShadow = true;
   scene.add(desk);
@@ -122,9 +143,12 @@ export async function verse3RoomStage(film) {
         vec3 txt = texture2D(uText, uv).rgb;
         float shown = step(uv.x, uX0 + uN * uCW);
         vec3 col = vec3(0.012, 0.016, 0.013) + txt * shown * 1.15;
-        float cx0 = uX0 + uN * uCW + uCW * 0.08, cx1 = cx0 + uCW * 0.84;
-        float cur = step(cx0, uv.x) * step(uv.x, cx1) * step(0.435, uv.y) * step(uv.y, 0.565) * uCursor;
-        col = mix(col, vec3(1.0, 0.5, 0.08) * 1.3, cur);
+        float cx0 = uX0 + uN * uCW + uCW * 0.08, cx1 = cx0 + uCW * 0.9;
+        float cur = step(cx0, uv.x) * step(uv.x, cx1) * step(0.42, uv.y) * step(uv.y, 0.58) * uCursor;
+        vec2 cc = vec2((cx0 + cx1) * 0.5, 0.5);
+        float halo = exp(-length((uv - cc) * vec2(9.0, 7.0)) * 3.0) * uCursor;
+        col = mix(col, vec3(1.0, 0.52, 0.1) * 2.0, cur);
+        col += vec3(1.0, 0.45, 0.08) * halo * 0.35;
         col *= 0.8 + 0.2 * sin(uv.y * 768.0 * 3.14159);
         vec2 d = uv - 0.5;
         col *= 1.0 - dot(d * vec2(1.0, 1.2), d * vec2(1.0, 1.2)) * 1.3;
@@ -161,7 +185,7 @@ export async function verse3RoomStage(film) {
       screenMat.uniforms.uN.value = LINE.length;
       screenMat.uniforms.uCursor.value = 1;
       screenMat.uniforms.uFlick.value = 0;
-      glow.intensity = 5;
+      glow.intensity = 9;
     },
     // times: per-character song times; cursor blinks after the last one.
     type(t, times) {
@@ -173,7 +197,7 @@ export async function verse3RoomStage(film) {
       screenMat.uniforms.uCursor.value = typing || n === 0 ? 1 : (Math.floor(since / 0.5) % 2 === 0 ? 1 : 0);
       // the tube flickers a hair, as they did
       screenMat.uniforms.uFlick.value = 0.03 * hash1(Math.floor(t * 30));
-      glow.intensity = 5 + n * 0.12;
+      glow.intensity = 9 + n * 0.15;
     },
   };
   return S;

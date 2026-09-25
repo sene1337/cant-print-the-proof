@@ -275,6 +275,33 @@ export class Motes extends THREE.Points {
   }
 }
 
+// A crisp point of light: a hot core, a tight halo and four thin rays (reads as a spark, not a smudge).
+let STAR = null;
+export function starSprite() {
+  if (STAR) return STAR;
+  const S = 256, c = canvas(S, S), g = c.getContext('2d');
+  const m = S / 2;
+  const halo = g.createRadialGradient(m, m, 0, m, m, m * 0.5);
+  halo.addColorStop(0, 'rgba(255,255,255,1)'); halo.addColorStop(0.08, 'rgba(255,255,255,0.9)');
+  halo.addColorStop(0.25, 'rgba(255,255,255,0.18)'); halo.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = halo; g.fillRect(0, 0, S, S);
+  for (const [dx, dy] of [[1, 0], [0, 1]]) {
+    const gr = g.createLinearGradient(m - dx * m, m - dy * m, m + dx * m, m + dy * m);
+    gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(0.5, 'rgba(255,255,255,0.75)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gr;
+    if (dx) g.fillRect(0, m - 1.2, S, 2.4); else g.fillRect(m - 1.2, 0, 2.4, S);
+  }
+  STAR = new THREE.CanvasTexture(c);
+  return STAR;
+}
+export function sparkCard(color = [1, 0.7, 0.35], size = 1) {
+  const m = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: starSprite(), color: new THREE.Color(...color), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  }));
+  m.scale.setScalar(size);
+  return m;
+}
+
 // A glow card that always faces the camera (for light sources).
 export function glowCard(color = [1, 0.6, 0.2], size = 1) {
   const m = new THREE.Sprite(new THREE.SpriteMaterial({
