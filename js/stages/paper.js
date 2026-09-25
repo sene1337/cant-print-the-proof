@@ -279,6 +279,7 @@ export async function paperStage(film) {
       desk.visible = false;
       lamp.visible = false;
       key.intensity = 2.2; key.color.set(0xf4f8e8);
+      lamp.intensity = 8;
       back.intensity = 2.8; back.color.set(0xbfe8c8);
       cloud.setFlutter(1);
       clock.visible = false;
