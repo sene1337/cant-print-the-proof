@@ -1,0 +1,756 @@
+<title>Sovereignty simulator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,500;1,300&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#EDEFEC; --panel:#FFFFFF; --ink:#18212F; --muted:#5A6577; --line:#D3D8DD;
+  --accent:#A8600F; --track:#C9CFD6;
+  color-scheme:light;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0D1522; --panel:#141E2E; --ink:#ECE7DC; --muted:#98A3B3; --line:#26334A;
+    --accent:#F0AE5A; --track:#2C3A52;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0D1522; --panel:#141E2E; --ink:#ECE7DC; --muted:#98A3B3; --line:#26334A;
+  --accent:#F0AE5A; --track:#2C3A52;
+  color-scheme:dark;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:"Figtree",system-ui,-apple-system,"Segoe UI",sans-serif;font-size:16px;line-height:1.5;
+  -webkit-font-smoothing:antialiased}
+
+.scene{position:relative;height:clamp(440px,72vh,680px);overflow:hidden;background:#0B1626}
+canvas{display:block;width:100%;height:100%}
+.hero{position:absolute;left:0;top:0;padding:22px 22px 0;max-width:36rem;pointer-events:none;color:#F4EEE2;
+  text-shadow:0 1px 18px rgba(5,10,20,.45)}
+.hero h1{margin:0;font-weight:500;font-size:15px;letter-spacing:.01em;opacity:.8}
+.year{font-family:"Cormorant Garamond",Georgia,"Times New Roman",serif;font-weight:300;
+  font-size:clamp(84px,24vw,188px);line-height:.86;margin:10px 0 8px;font-variant-numeric:lining-nums;
+  transition:opacity .3s}
+.verdict{margin:0;font-size:17px;max-width:24ch;line-height:1.35;opacity:.92}
+@media (min-width:640px){.verdict{max-width:32ch}}
+
+main{max-width:760px;margin:0 auto;padding:28px 20px 96px}
+.controls{display:grid;gap:26px}
+.control{display:grid;grid-template-columns:1fr auto;align-items:baseline;row-gap:10px}
+.control label{font-weight:500}
+.control output{font-family:"Cormorant Garamond",Georgia,serif;font-size:26px;font-weight:500;color:var(--accent);
+  font-variant-numeric:tabular-nums lining-nums}
+.control .hint{grid-column:1/-1;margin:-4px 0 0;font-size:14px;color:var(--muted)}
+input[type=range]{grid-column:1/-1;width:100%;-webkit-appearance:none;appearance:none;background:transparent;height:28px;margin:0}
+input[type=range]::-webkit-slider-runnable-track{height:3px;background:linear-gradient(to right,var(--accent) var(--p,50%),var(--track) var(--p,50%));border-radius:2px}
+input[type=range]::-moz-range-track{height:3px;background:var(--track);border-radius:2px}
+input[type=range]::-moz-range-progress{height:3px;background:var(--accent)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;margin-top:-9.5px;
+  background:var(--panel);border:2px solid var(--accent);box-shadow:0 0 0 6px color-mix(in srgb,var(--accent) 14%,transparent)}
+input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:var(--panel);border:2px solid var(--accent)}
+input[type=range]:focus-visible{outline:2px solid var(--accent);outline-offset:4px;border-radius:4px}
+
+.money{display:flex;align-items:baseline;font-family:"Cormorant Garamond",Georgia,serif;font-size:26px;font-weight:500;color:var(--accent)}
+.money input{font:inherit;color:inherit;background:transparent;border:0;border-bottom:1px dashed var(--track);border-radius:0;
+  width:8ch;max-width:14ch;padding:0 0 0 2px;margin:0;text-align:right;font-variant-numeric:tabular-nums lining-nums}
+.money input:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.money input:disabled{color:var(--muted);border-bottom-color:transparent}
+.money:has(input:disabled){color:var(--muted)}
+.hint .link{font:inherit;color:var(--ink);background:none;border:0;padding:0;margin-left:4px;cursor:pointer;
+  text-decoration:underline;text-decoration-color:var(--accent);text-underline-offset:3px}
+.hint .link:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:2px}
+
+fieldset{border:0;padding:0;margin:0;min-width:0}
+legend{font-weight:500;padding:0;margin-bottom:12px}
+fieldset>.hint{margin:10px 0 0;font-size:14px;color:var(--muted)}
+.paths{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.paths.n2{grid-template-columns:repeat(2,1fr)}
+.paths.n5{grid-template-columns:repeat(5,1fr)}
+.paths button{font:inherit;color:var(--ink);background:transparent;border:0;padding:12px 8px;cursor:pointer;text-align:center;line-height:1.25}
+.paths.n5 button{padding:12px 4px}
+.paths button+button{border-left:1px solid var(--line)}
+.paths button small{display:block;color:var(--muted);font-size:13px;margin-top:2px}
+.paths button[aria-pressed="true"]{background:var(--accent);color:var(--bg)}
+.paths button[aria-pressed="true"] small{color:inherit;opacity:.8}
+.paths button:focus-visible{outline:2px solid var(--accent);outline-offset:-4px}
+@media (max-width:480px){.paths.n5 button{font-size:14px}}
+
+.readout{margin:40px 0 0;display:grid;grid-template-columns:repeat(2,1fr);gap:22px 20px;border-top:1px solid var(--line);padding-top:26px}
+.readout div{margin:0;display:flex;flex-direction:column}
+.readout dt{font-size:14px;color:var(--muted);text-wrap:balance}
+.readout dd{margin:auto 0 0;padding-top:2px;font-family:"Cormorant Garamond",Georgia,serif;font-size:32px;font-weight:500;line-height:1.1;font-variant-numeric:lining-nums}
+@media (min-width:640px){.readout{grid-template-columns:repeat(3,1fr)}}
+
+.compare{margin-top:32px}
+.compare h2{margin:0 0 10px;font-size:14px;font-weight:400;color:var(--muted)}
+.cmp{display:grid;grid-template-columns:repeat(5,1fr);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.cmp button{font:inherit;color:var(--ink);background:transparent;border:0;padding:10px 4px 9px;cursor:pointer;min-width:0;
+  display:flex;flex-direction:column;align-items:center;justify-content:space-between;gap:4px;text-align:center}
+.cmp button+button{border-left:1px solid var(--line)}
+.cmp small{font-size:13px;line-height:1.2;color:var(--muted)}
+.cmp b{font-family:"Cormorant Garamond",Georgia,serif;font-weight:500;font-size:clamp(20px,5.6vw,27px);line-height:1;
+  font-variant-numeric:lining-nums;white-space:nowrap}
+.cmp b.long{font-size:clamp(16px,4.4vw,22px);padding-bottom:2px}
+.cmp button[aria-pressed="true"]{background:color-mix(in srgb,var(--accent) 14%,transparent)}
+.cmp button[aria-pressed="true"] small{color:var(--ink)}
+.cmp button[aria-pressed="true"] b{color:var(--accent)}
+.cmp button:focus-visible{outline:2px solid var(--accent);outline-offset:-4px}
+
+.asm{margin-top:36px;border-top:1px solid var(--line);padding-top:20px}
+.asm summary{font-weight:500;cursor:pointer;width:max-content;max-width:100%}
+.asm summary:focus-visible{outline:2px solid var(--accent);outline-offset:4px;border-radius:2px}
+.asm-body{display:grid;gap:28px;margin-top:20px}
+@media (min-width:640px){.asm-body{grid-template-columns:1fr 1fr;column-gap:44px}}
+.asm-body fieldset{display:grid;gap:10px;align-content:start}
+.asm-body legend{margin-bottom:6px}
+.asm-body fieldset>.hint{margin:2px 0 0}
+.num{display:grid;grid-template-columns:1fr auto 2.2em;align-items:center;column-gap:10px;font-size:15px}
+.num input{font:inherit;font-variant-numeric:tabular-nums;width:5.4em;padding:6px 8px;margin:0;border:1px solid var(--line);border-radius:6px;
+  background:var(--panel);color:var(--ink);text-align:right}
+.num input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.num i{font-style:normal;font-size:14px;color:var(--muted)}
+.hint.warn{color:var(--ink);font-weight:600}
+.btn{justify-self:start;font:500 15px/1 "Figtree",system-ui,sans-serif;color:var(--ink);background:transparent;
+  border:1px solid var(--accent);border-radius:999px;padding:11px 18px;cursor:pointer}
+.btn:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+
+.note{margin-top:36px;font-size:14px;color:var(--muted);max-width:62ch}
+.note p{margin:0 0 12px}
+.note a{color:var(--ink);text-decoration-color:var(--accent);text-underline-offset:3px}
+
+.sound{position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:5;
+  font:500 15px/1 "Figtree",system-ui,sans-serif;color:#F4EEE2;background:rgba(14,22,36,.82);
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);border:1px solid rgba(240,174,90,.55);
+  border-radius:999px;padding:12px 18px;cursor:pointer;display:flex;gap:10px;align-items:center}
+.sound:focus-visible{outline:2px solid #F0AE5A;outline-offset:3px}
+.sound .bars{display:flex;gap:2px;align-items:flex-end;height:14px}
+.sound .bars i{display:block;width:3px;background:#F0AE5A;border-radius:1px;height:4px;transition:height .2s}
+.sound[aria-pressed="true"] .bars i{animation:eq 1.1s ease-in-out infinite}
+.sound[aria-pressed="true"] .bars i:nth-child(2){animation-delay:-.4s}
+.sound[aria-pressed="true"] .bars i:nth-child(3){animation-delay:-.75s}
+@keyframes eq{0%,100%{height:4px}50%{height:14px}}
+@media (prefers-reduced-motion:reduce){.sound[aria-pressed="true"] .bars i{animation:none;height:10px}}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+</style>
+
+<div class="scene" id="scene">
+  <canvas id="sky" aria-hidden="true"></canvas>
+  <div class="hero">
+    <h1>Sovereignty simulator</h1>
+    <div class="year" id="year">2030</div>
+    <p class="verdict" id="verdict" aria-live="polite"></p>
+  </div>
+</div>
+
+<main>
+  <div class="controls">
+    <div class="control">
+      <label for="btc">Your stack</label><output id="btcOut" for="btc"></output>
+      <input type="range" id="btc" min="0" max="1000" value="492">
+    </div>
+    <div class="control">
+      <label for="assets">Everything else you own</label><output id="assetsOut" for="assets"></output>
+      <input type="range" id="assets" min="0" max="1000" value="500" aria-describedby="assetsHint">
+      <p class="hint" id="assetsHint">Property, shares, bonds and cash, before the mortgage. The split and the mortgage are under Assumptions.</p>
+    </div>
+    <div class="control">
+      <label for="earn">What you earn per year</label><output id="earnOut" for="earn"></output>
+      <input type="range" id="earn" min="0" max="1000" value="500">
+    </div>
+    <div class="control">
+      <label for="save">How much you save</label><output id="saveOut" for="save"></output>
+      <input type="range" id="save" min="0" max="80" step="1" value="25" aria-describedby="saveHint">
+      <p class="hint" id="saveHint"><span id="saveHintText"></span><button type="button" class="link" id="saveReset" hidden></button></p>
+    </div>
+    <div class="control">
+      <label for="spend">What your life costs per year</label><output id="spendOut" for="spend"></output>
+      <input type="range" id="spend" min="0" max="1000" value="541">
+    </div>
+    <div class="control">
+      <label for="inf">Your personal inflation</label><output id="infOut" for="inf"></output>
+      <input type="range" id="inf" min="0" max="15" step="0.5" value="7" aria-describedby="infHint">
+      <p class="hint" id="infHint">How fast your real costs rise each year, not the CPI. Bitcoin24 assumes 6% monetary inflation and 2% CPI.</p>
+    </div>
+    <fieldset>
+      <legend>Strategy</legend>
+      <div class="paths n5" role="group" id="strats">
+        <button type="button" data-strat="0" aria-pressed="false">Normie</button>
+        <button type="button" data-strat="1" aria-pressed="false">BTC 10%</button>
+        <button type="button" data-strat="2" aria-pressed="true">BTC Maxi</button>
+        <button type="button" data-strat="3" aria-pressed="false">Double Maxi</button>
+        <button type="button" data-strat="4" aria-pressed="false">Triple Maxi</button>
+      </div>
+      <p class="hint" id="stratHint"></p>
+    </fieldset>
+    <div class="control">
+      <label for="px">Bitcoin price today</label>
+      <span class="money"><input id="px" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" aria-describedby="pxHint"></span>
+      <p class="hint" id="pxHint"></p>
+    </div>
+    <fieldset>
+      <legend>Price model</legend>
+      <div class="paths n2" role="group" id="models">
+        <button type="button" data-model="b24" aria-pressed="true">Bitcoin24 (Saylor)<small>yearly returns to 2045</small></button>
+        <button type="button" data-model="power" aria-pressed="false">Power law<small>long-run trend</small></button>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>Price path</legend>
+      <div class="paths" role="group" id="cases">
+        <button type="button" data-case="bear" aria-pressed="false">Bear<small id="cbear"></small></button>
+        <button type="button" data-case="base" aria-pressed="true">Base<small id="cbase"></small></button>
+        <button type="button" data-case="bull" aria-pressed="false">Bull<small id="cbull"></small></button>
+      </div>
+      <p class="hint" id="pathHint"></p>
+    </fieldset>
+  </div>
+
+  <dl class="readout">
+    <div><dt>Net worth today</dt><dd id="rToday"></dd></div>
+    <div><dt>Net worth in 2045, Bitcoin24's horizon</dt><dd id="r2045"></dd></div>
+    <div><dt>Bitcoin price in 2045</dt><dd id="rPx"></dd></div>
+    <div><dt>Bitcoin's share of world assets in 2045</dt><dd id="rShare"></dd></div>
+    <div><dt>Sold in your first free year</dt><dd id="rFirst"></dd></div>
+    <div><dt>Still yours in 2090</dt><dd id="r2090"></dd></div>
+  </dl>
+
+  <section class="compare" aria-labelledby="cmpTitle">
+    <h2 id="cmpTitle">Your freedom year under each Bitcoin24 strategy</h2>
+    <div class="cmp" role="group" aria-labelledby="cmpTitle" id="cmp">
+      <button type="button" data-strat="0" aria-pressed="false"><small>Normie</small><b></b></button>
+      <button type="button" data-strat="1" aria-pressed="false"><small>BTC 10%</small><b></b></button>
+      <button type="button" data-strat="2" aria-pressed="true"><small>BTC Maxi</small><b></b></button>
+      <button type="button" data-strat="3" aria-pressed="false"><small>Double Maxi</small><b></b></button>
+      <button type="button" data-strat="4" aria-pressed="false"><small>Triple Maxi</small><b></b></button>
+    </div>
+  </section>
+
+  <details class="asm" id="asm">
+    <summary>Assumptions</summary>
+    <div class="asm-body">
+      <fieldset>
+        <legend>Bitcoin24 price, <span id="asmCase">Base</span> case</legend>
+        <div class="num"><label for="aArr">Return in 2025</label><input id="aArr" type="number" step="any" min="0" max="300"><i>%</i></div>
+        <div class="num"><label for="aRed">Lower each year by</label><input id="aRed" type="number" step="any" min="0" max="100"><i>pts</i></div>
+        <div class="num"><label for="aFloor">Steady-state return</label><input id="aFloor" type="number" step="any" min="0" max="300"><i>%</i></div>
+        <p class="hint">Used by the Bitcoin24 price model. Bear, Base and Bull keep their own values.</p>
+      </fieldset>
+      <fieldset>
+        <legend>Mix of everything else you own</legend>
+        <div class="num"><label for="mEq">Equity (shares)</label><input id="mEq" type="number" step="any" min="0" max="100"><i>%</i></div>
+        <div class="num"><label for="mRe">Real estate</label><input id="mRe" type="number" step="any" min="0" max="100"><i>%</i></div>
+        <div class="num"><label for="mBd">Bonds</label><input id="mBd" type="number" step="any" min="0" max="100"><i>%</i></div>
+        <div class="num"><label for="mCu">Currency (cash)</label><input id="mCu" type="number" step="any" min="0" max="100"><i>%</i></div>
+        <p class="hint" id="mixTotal"></p>
+      </fieldset>
+      <fieldset>
+        <legend>Returns per year</legend>
+        <div class="num"><label for="rEq">Equity</label><input id="rEq" type="number" step="any" min="-50" max="100"><i>%</i></div>
+        <div class="num"><label for="rRe">Real estate</label><input id="rRe" type="number" step="any" min="-50" max="100"><i>%</i></div>
+        <div class="num"><label for="rBd">Bond yield, before tax</label><input id="rBd" type="number" step="any" min="-50" max="100"><i>%</i></div>
+        <div class="num"><label for="rCu">Cash yield, before tax</label><input id="rCu" type="number" step="any" min="-50" max="100"><i>%</i></div>
+        <p class="hint">Bitcoin24 builds equity and real estate returns from 6% inflation and 3% innovation growth, adjusted for monetization and dilution.</p>
+      </fieldset>
+      <fieldset>
+        <legend>Income and debt</legend>
+        <div class="num"><label for="aTax">Income tax on yields</label><input id="aTax" type="number" step="any" min="0" max="100"><i>%</i></div>
+        <div class="num"><label for="aGrow">Earnings growth</label><input id="aGrow" type="number" step="any" min="-50" max="100"><i>%</i></div>
+        <div class="num"><label for="aMort">Mortgage, share of real estate</label><input id="aMort" type="number" step="any" min="0" max="200"><i>%</i></div>
+        <div class="num"><label for="aRate">Mortgage rate</label><input id="aRate" type="number" step="any" min="0" max="50"><i>%</i></div>
+      </fieldset>
+      <button type="button" class="btn" id="reset">Reset to Bitcoin24</button>
+    </div>
+  </details>
+
+  <div class="note">
+    <p>The model: <a href="https://github.com/bitcoin-model/bitcoin_model" target="_blank" rel="noopener">Bitcoin24 by Michael Saylor, Shirish Jajodia and Chaitanya Jain (open source)</a>. With the Bitcoin24 price model, Bitcoin starts at your price today in 2026 and then grows at the model's rate for each calendar year. In the Base case that rate is 50% in 2025 and falls 2.5 points a year to a floor of 20%. Bear runs from 25% to 18%, falling 0.5 points a year. Bull runs from 75% to 25%, falling 5 points a year.</p>
+    <p>Bitcoin24 stops at 2045. For later years the simulator uses its own extension, which is not Saylor's. Bitcoin grows only as fast as the world's other assets in the Bitcoin24 macro model, each asset class at its own growth rate, so Bitcoin's share of world assets stays at its 2045 level. With the power-law model, Bitcoin follows its long-run trend (price ≈ 1.0117×10⁻¹⁷ × days since the genesis block, raised to the 5.82), scaled by your price path. Trend price today works out to about <span id="trendToday"></span>, which can sit well above or below spot.</p>
+    <p>Your strategy acts today: it moves part of your shares, bonds and cash into Bitcoin, and Double and Triple Maxi also borrow against your real estate. Your other assets grow at Bitcoin24's rates, with bond and cash yields taxed. Your mortgage grows at its rate and is never paid down. Until your freedom year you invest your savings as your strategy says. From your freedom year you stop earning and buying. Your spending rises at your inflation rate and comes first from shares, bonds and cash, then from selling Bitcoin. Your real estate is never sold. What you own minus what you owe must stay above zero through 2090. Taxes on selling Bitcoin are not modelled; Bitcoin24 does not model them either. An illustration, not advice.</p>
+  </div>
+</main>
+
+<button class="sound" id="sound" type="button" aria-pressed="false">
+  <span class="bars" aria-hidden="true"><i></i><i></i><i></i></span><span id="soundLabel">Play sound</span>
+</button>
+
+<script>
+/* MODEL:BEGIN */
+/* Pure model code, no DOM. simulator/test-bitcoin24.mjs evaluates this block on its own.
+   Source: Bitcoin24 v1.0 (github.com/bitcoin-model/bitcoin_model, commit 30c97a7). Cell references in comments. */
+const SovModel=(function(){
+"use strict";
+const B24={
+  price2024:65000,                                             // BTC!D4, $65K
+  cases:{                                                      // BTC!E7:G9
+    bear:{arr:.25,red:.005,floor:.18},
+    base:{arr:.50,red:.025,floor:.20},
+    bull:{arr:.75,red:.05, floor:.25}},
+  supplyM:[19.802,19.966,20.13,20.295,20.401,20.484,20.566,20.648,20.701,20.742,20.783,
+           20.824,20.85,20.871,20.892,20.912,20.925,20.935,20.946,20.956,20.963,20.968], // Macro!C21:X21, 2024..2045, millions
+  world2024T:{gold:16,art:18,equity:115,realEstate:330,bonds:300,currency:120},        // Macro!C23:C28, $T
+  inflationGrowth:.06, innovationGrowth:.03, cpi:.02,          // Macro!C7, C8, C42
+  monetization:{gold:-.04,art:0,equity:.01,realEstate:-.02,bonds:-.04,currency:-.02}, // Macro!N5:N10
+  dilution:{gold:.0175,art:.0125,equity:.01,realEstate:.02},   // Macro!AD5:AD8
+  yields:{bonds:.07,currency:.02},                             // Macro!AD11:AD12, pre-tax
+  mix:{equity:.30,realEstate:.50,bonds:.15,currency:.05},      // Individual!O5:O8
+  assets:1e6, earnings:2e5, earningsGrowth:.05, incomeTax:.40, // Individual!D5, D7, D8, D9
+  mortgageShare:.50, mortgageRate:.05,                         // Individual!AE4 (50% of real estate), AE5
+  horizon:2045
+};
+// Individual!E11:Y15. convert = share of non-real-estate assets moved to BTC in year one,
+// excess = share of excess earnings put into BTC, extraMortgage = new loan as a share of real estate value.
+const STRATEGIES=[
+  {name:'Normie',      convert:0,  excess:0,  extraMortgage:0,   save:.25},
+  {name:'BTC 10%',     convert:.1, excess:.1, extraMortgage:0,   save:.25},
+  {name:'BTC Maxi',    convert:.8, excess:.8, extraMortgage:0,   save:.25},
+  {name:'Double Maxi', convert:1,  excess:1,  extraMortgage:.25, save:.25},
+  {name:'Triple Maxi', convert:1,  excess:1,  extraMortgage:.5,  save:.5}
+];
+const capGrowth=k=>B24.inflationGrowth+B24.innovationGrowth+B24.monetization[k]; // Macro rows 55-60
+const impliedReturn=k=>(1+capGrowth(k))/(1+B24.dilution[k])-1;                   // Macro rows 69-72
+
+function defaultAssumptions(){
+  const c=B24.cases;
+  return {
+    cases:{bear:Object.assign({},c.bear),base:Object.assign({},c.base),bull:Object.assign({},c.bull)},
+    mix:Object.assign({},B24.mix),
+    returns:{equity:impliedReturn('equity'),realEstate:impliedReturn('realEstate'),bonds:B24.yields.bonds,currency:B24.yields.currency},
+    incomeTax:B24.incomeTax, earningsGrowth:B24.earningsGrowth, mortgageShare:B24.mortgageShare, mortgageRate:B24.mortgageRate
+  };
+}
+// Macro row 52: ARR(2025) = 2025 ARR; ARR(y) = MAX(ARR(y-1) - reduction, steady state).
+function arrFor(c,year){let a=c.arr;for(let y=2026;y<=year;y++)a=Math.max(a-c.red,c.floor);return a;}
+// World assets other than BTC, in $: each class compounds at its own market-cap growth (Macro rows 23-28).
+function worldOther(year){let t=0;for(const k in B24.world2024T)t+=B24.world2024T[k]*1e12*Math.pow(1+capGrowth(k),year-2024);return t;}
+// BTC supply in coins (Macro row 21); held at the 2045 figure after 2045.
+function supply(year){const y=Math.min(Math.max(year,2024),2045);return B24.supplyM[y-2024]*1e6;}
+// The power-law trend used by the first version of this simulator.
+function powerLaw(year){const d=(Date.UTC(year,8,24)-Date.UTC(2009,0,3))/864e5;return 1.0117e-17*Math.pow(d,5.82);}
+
+// Price per year from startYear to endYear.
+// model 'b24': price(startYear) = startPrice, then Bitcoin24's calendar-year ARR through 2045. After 2045
+// (the simulator's own extension, not Bitcoin24): BTC grows with the other world assets, so its share stays at the 2045 level.
+// model 'power': power-law trend times mult for every year.
+function pricePath(o){
+  const y0=o.startYear,y1=o.endYear,h=B24.horizon,price=[];
+  if(o.model==='power'){for(let y=y0;y<=y1;y++)price.push(powerLaw(y)*o.mult);}
+  else{
+    let p=o.startPrice;price.push(p);
+    for(let y=y0+1;y<=y1;y++){p*=y<=h?1+arrFor(o.c,y):worldOther(y)/worldOther(y-1);price.push(p);}
+  }
+  const ph=(h>=y0&&h<=y1)?price[h-y0]:NaN,cap=ph*supply(h),other=worldOther(h);
+  return {startYear:y0,endYear:y1,price,price2045:ph,cap2045:cap,world2045:cap+other,share2045:cap/(cap+other)};
+}
+// The Bitcoin24 price for a year, anchored like the workbook at 2024 and $65K.
+function modelPrice(c,year){return pricePath({model:'b24',c,startYear:2024,startPrice:B24.price2024,endYear:year}).price[year-2024];}
+
+function normMix(m){
+  const t=m.equity+m.realEstate+m.bonds+m.currency;
+  if(!(t>0))return {equity:0,realEstate:0,bonds:0,currency:1};
+  return {equity:m.equity/t,realEstate:m.realEstate/t,bonds:m.bonds/t,currency:m.currency/t};
+}
+
+// One life. p: {startYear,endYear,stack,assets,earnings,save,strategy,mix,returns,tax,earningsGrowth,
+// mortgageShare,mortgageRate,spend,inflation}. price: array from pricePath. s: freedom year (Infinity = never).
+function simulate(p,price,s){
+  const y0=p.startYear,st=p.strategy,m=normMix(p.mix),r=p.returns,p0=price[0],nonRE=1-m.realEstate;
+  let re=p.assets*m.realEstate;                                          // Individual!D28
+  const extra=st.extraMortgage*re;                                       // Individual!T14/Y14
+  let btc=p.stack+(st.convert*nonRE*p.assets+extra)/p0;                  // Individual!D26, D23
+  let eq=p.assets*m.equity*(1-st.convert),                               // Individual!D27
+      bd=p.assets*m.bonds*(1-st.convert),                                // Individual!D29
+      cu=p.assets*m.currency*(1-st.convert);                             // Individual!D30
+  let debt=p.mortgageShare*re+extra;                                     // Individual!D32
+  let excess=p.save*p.earnings;                                          // Individual!D20 (year one is not invested)
+  const netStart=btc*p0+eq+re+bd+cu-debt,rows=[];
+  let ok=true;
+  for(let y=y0;y<=p.endYear;y++){
+    const i=y-y0,px=price[i],spend=p.spend*Math.pow(1+p.inflation,i);
+    let bought=0,sold=0;
+    if(i>0){
+      eq*=1+r.equity;re*=1+r.realEstate;                                // Individual rows 27-28
+      bd*=1+r.bonds*(1-p.tax);cu*=1+r.currency*(1-p.tax);                // rows 29-30, yields taxed
+      debt*=1+p.mortgageRate;                                            // row 32, interest capitalised
+      excess*=1+p.earningsGrowth;                                        // row 20
+      if(y<s){
+        bought=excess*st.excess/px;btc+=bought;                          // row 22
+        const rest=excess*(1-st.excess);
+        if(nonRE>0){eq+=rest*m.equity/nonRE;bd+=rest*m.bonds/nonRE;cu+=rest*m.currency/nonRE;}
+        else cu+=rest;
+      }
+    }
+    if(y>=s){                                                            // free: no earnings, spending paid from
+      let need=spend,t;                                                  // equity, then bonds, then cash, then BTC
+      t=Math.min(eq,need);eq-=t;need-=t;
+      t=Math.min(bd,need);bd-=t;need-=t;
+      t=Math.min(cu,need);cu-=t;need-=t;
+      if(need>0){sold=need/px;if(sold>btc){ok=false;sold=btc;}btc-=sold;}
+    }
+    const assets=btc*px+eq+re+bd+cu,net=assets-debt;
+    if(y>=s&&!(net>0))ok=false;
+    rows.push({y,price:px,btc,eq,re,bd,cu,debt,assets,net,spend,sold,bought});
+  }
+  return {ok,rows,netStart};
+}
+// Freedom year: the earliest year from startYear to sMax that stays solvent through endYear.
+function solve(p,price,sMax){
+  for(let s=p.startYear;s<=sMax;s++){const r=simulate(p,price,s);if(r.ok)return {s,rows:r.rows,netStart:r.netStart};}
+  const r=simulate(p,price,Infinity);return {s:null,rows:r.rows,netStart:r.netStart};
+}
+return {B24,STRATEGIES,capGrowth,impliedReturn,defaultAssumptions,arrFor,worldOther,supply,powerLaw,pricePath,modelPrice,normMix,simulate,solve};
+})();
+/* MODEL:END */
+
+(function(){
+"use strict";
+const M=SovModel, Y0=2026, YEND=2090, SMAX=2075, H45=M.B24.horizon;
+const reduced=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const $=id=>document.getElementById(id);
+
+const CASES={bear:{name:'Bear',mult:.5,pl:'half of trend'},base:{name:'Base',mult:1,pl:'power-law trend'},bull:{name:'Bull',mult:1.6,pl:'1.6× trend'}};
+const state={model:'b24',caseKey:'base',strat:2,saveOverride:null,price:0,priceSource:'model',live:'pending',asm:M.defaultAssumptions()};
+const el={btc:$('btc'),assets:$('assets'),earn:$('earn'),save:$('save'),spend:$('spend'),inf:$('inf')};
+const btcFrom=v=>Math.pow(10,-1+3*v/1000);
+const assetsFrom=v=>v<=0?0:1e4*Math.pow(10,4*v/1000);
+const earnFrom=v=>v<=0?0:2e4*Math.pow(10,2*v/1000);
+const spendFrom=v=>30000*Math.pow(10,1.5229*v/1000);
+
+function money(v){
+  if(v<0) return '−'+money(-v);
+  if(v>=1e9) return '$'+(v/1e9).toFixed(v>=1e10?0:1)+'B';
+  if(v>=1e6) return '$'+(v/1e6).toFixed(v>=1e7?0:1)+'M';
+  if(v>=1e3) return '$'+Math.round(v/1e3)+'K';
+  return '$'+Math.round(v);
+}
+function big(v){
+  if(!isFinite(v)) return '—';
+  const neg=v<0;let a=Math.abs(v);
+  if(a>0){const f=Math.pow(10,Math.floor(Math.log10(a))-2);a=Math.round(a/f)*f;}
+  const u=a>=1e12?[1e12,'T']:a>=1e9?[1e9,'B']:a>=1e6?[1e6,'M']:a>=1e3?[1e3,'K']:[1,''];
+  const x=a/u[0];
+  return (neg?'−$':'$')+String(+x.toFixed(x>=100?0:x>=10?1:2))+u[1];
+}
+function pct(x){const p=x*100;return String(+p.toFixed(Math.abs(p)>=10?1:2))+'%';}
+function num(x,d){return String(+(x*100).toFixed(d));}
+function btcFmt(b){ if(b<=0) return '0 BTC'; if(b<0.01) return Math.round(b*1e8).toLocaleString()+' sats'; return (b<10?b.toFixed(2):b.toFixed(1))+' BTC'; }
+const yearWord=s=>s==null?'Not yet':s===Y0?'Now':String(s);
+
+const currentCase=()=>state.asm.cases[state.caseKey];
+function paramsFor(i){
+  const st=M.STRATEGIES[i],a=state.asm;
+  return {startYear:Y0,endYear:YEND,stack:btcFrom(+el.btc.value),assets:assetsFrom(+el.assets.value),earnings:earnFrom(+el.earn.value),
+    save:state.saveOverride!=null?state.saveOverride:st.save,strategy:st,mix:a.mix,returns:a.returns,tax:a.incomeTax,
+    earningsGrowth:a.earningsGrowth,mortgageShare:a.mortgageShare,mortgageRate:a.mortgageRate,
+    spend:spendFrom(+el.spend.value),inflation:+el.inf.value/100};
+}
+function pricesNow(){
+  return M.pricePath(state.model==='power'
+    ?{model:'power',mult:CASES[state.caseKey].mult,startYear:Y0,endYear:YEND}
+    :{model:'b24',c:currentCase(),startYear:Y0,startPrice:state.price,endYear:YEND});
+}
+
+/* ---------- audio ---------- */
+const A={on:false,ctx:null};
+function impulse(ctx,sec){
+  const len=ctx.sampleRate*sec,b=ctx.createBuffer(2,len,ctx.sampleRate);
+  for(let c=0;c<2;c++){const d=b.getChannelData(c);for(let i=0;i<len;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2.6);}
+  return b;
+}
+function initAudio(){
+  const ctx=new (window.AudioContext||window.webkitAudioContext)();A.ctx=ctx;
+  const master=ctx.createGain();master.gain.value=0;A.master=master;
+  const comp=ctx.createDynamicsCompressor();master.connect(comp).connect(ctx.destination);
+  const bus=ctx.createGain();bus.connect(master);
+  const conv=ctx.createConvolver();conv.buffer=impulse(ctx,3.4);
+  const wet=ctx.createGain();wet.gain.value=.42;bus.connect(conv);conv.connect(wet).connect(master);
+  A.bus=bus;
+  const f=ctx.createBiquadFilter();f.type='lowpass';f.frequency.value=500;f.Q.value=.8;A.filter=f;
+  const dg=ctx.createGain();dg.gain.value=.14;f.connect(dg).connect(bus);
+  const mk=(fr,type,g,det)=>{const o=ctx.createOscillator();o.type=type;o.frequency.value=fr;o.detune.value=det||0;
+    const gg=ctx.createGain();gg.gain.value=g;o.connect(gg).connect(f);o.start();return gg;};
+  mk(55,'triangle',.9);mk(55,'sawtooth',.12,7);mk(82.41,'triangle',.55,-4);mk(110,'sine',.35,3);
+  A.minor=mk(130.81,'sine',.0);A.major=mk(138.59,'sine',.0);
+  const lfo=ctx.createOscillator();lfo.frequency.value=.06;const lg=ctx.createGain();lg.gain.value=180;lfo.connect(lg).connect(f.frequency);lfo.start();
+}
+function droneTo(n){
+  if(!A.on)return;const t=A.ctx.currentTime;
+  A.filter.frequency.setTargetAtTime(260+(1-n)*1700,t,.5);
+  A.minor.gain.setTargetAtTime(.32*n,t,.6);A.major.gain.setTargetAtTime(.32*(1-n),t,.6);
+}
+function bell(freq,vol){
+  if(!A.on)return;const ctx=A.ctx,t=ctx.currentTime;
+  [[1,1,3.2],[2.76,.42,1.7],[5.4,.2,.9],[8.93,.08,.45]].forEach(([r,g,d])=>{
+    const o=ctx.createOscillator();o.type='sine';o.frequency.value=freq*r;
+    const e=ctx.createGain();e.gain.setValueAtTime(0,t);e.gain.linearRampToValueAtTime(vol*g,t+.008);e.gain.exponentialRampToValueAtTime(1e-4,t+d);
+    o.connect(e).connect(A.bus);o.start(t);o.stop(t+d+.05);
+  });
+}
+let lastTick=0;
+function tick(v){
+  if(!A.on)return;const now=performance.now();if(now-lastTick<38)return;lastTick=now;
+  const ctx=A.ctx,t=ctx.currentTime,o=ctx.createOscillator(),e=ctx.createGain();
+  o.type='sine';o.frequency.value=520+v*900;
+  e.gain.setValueAtTime(.05,t);e.gain.exponentialRampToValueAtTime(1e-4,t+.05);
+  o.connect(e).connect(A.master);o.start(t);o.stop(t+.06);
+}
+const PENTA=[0,3,5,7,10,12,15,17,19,22,24];
+function yearBell(n){bell(220*Math.pow(2,PENTA[Math.round((1-n)*(PENTA.length-1))]/12),.16);}
+function arrival(){[0,4,7,12,16].forEach((s,i)=>setTimeout(()=>bell(440*Math.pow(2,s/12),.13),i*140));}
+
+$('sound').addEventListener('click',()=>{
+  if(!A.ctx)initAudio();
+  A.on=!A.on;const t=A.ctx.currentTime;
+  if(A.on){A.ctx.resume();A.master.gain.cancelScheduledValues(t);A.master.gain.setTargetAtTime(.9,t,.8);droneTo(view.n);yearBell(view.n);}
+  else A.master.gain.setTargetAtTime(0,t,.25);
+  $('sound').setAttribute('aria-pressed',A.on);$('soundLabel').textContent=A.on?'Sound on':'Play sound';
+});
+
+/* ---------- scene ---------- */
+const cv=$('sky'),cx=cv.getContext('2d');let W=0,H=0,dpr=1;
+const stars=Array.from({length:150},()=>({x:Math.random(),y:Math.random()*.72,r:Math.random()*1.2+.3,p:Math.random()*6.28,s:.5+Math.random()*1.5}));
+function resize(){dpr=Math.min(window.devicePixelRatio||1,2);W=cv.clientWidth;H=cv.clientHeight;cv.width=W*dpr;cv.height=H*dpr;cx.setTransform(dpr,0,0,dpr,0,0);}
+window.addEventListener('resize',resize);
+
+const NIGHT=[[9,19,36],[22,36,62],[40,52,82],[8,15,27]];
+const DAWN =[[46,74,120],[214,142,120],[246,206,150],[44,70,96]];
+const mix=(a,b,t)=>a.map((v,i)=>Math.round(v+(b[i]-v)*t));
+const rgb=(c,a)=>a==null?`rgb(${c})`:`rgba(${c},${a})`;
+
+let model=null;
+const view={n:1,sunX:.5};
+
+function draw(time){
+  const n=view.n,d=1-n,HZ=H*.8,pad=18;
+  const c=NIGHT.map((v,i)=>mix(v,DAWN[i],d));
+  const g=cx.createLinearGradient(0,0,0,HZ);
+  g.addColorStop(0,rgb(c[0]));g.addColorStop(.62,rgb(c[1]));g.addColorStop(1,rgb(c[2]));
+  cx.fillStyle=g;cx.fillRect(0,0,W,HZ);
+
+  const sa=Math.max(0,n*1.1-.1);
+  if(sa>0){for(const s of stars){const tw=reduced?1:.55+.45*Math.sin(time/1000*s.s+s.p);
+    cx.fillStyle=`rgba(236,232,220,${sa*tw*.9})`;cx.beginPath();cx.arc(s.x*W,s.y*HZ,s.r,0,6.283);cx.fill();}}
+
+  const X=y=>pad+(y-Y0)/(YEND-Y0)*(W-pad*2);
+  const sx=pad+view.sunX*(W-pad*2), sy=HZ+26-d*HZ*.42, sr=Math.max(26,W*.05);
+  const glow=cx.createRadialGradient(sx,sy,0,sx,sy,sr*7);
+  glow.addColorStop(0,`rgba(255,214,150,${.55*d+.08})`);glow.addColorStop(1,'rgba(255,190,120,0)');
+  cx.fillStyle=glow;cx.fillRect(0,0,W,HZ);
+  cx.fillStyle=`rgba(255,${Math.round(200+40*d)},${Math.round(140+60*d)},${.35+.65*d})`;
+  cx.beginPath();cx.arc(sx,sy,sr,0,6.283);cx.fill();
+
+  if(model){
+    const pts=model.out;let lo=Infinity,hi=0;
+    for(const p of pts){lo=Math.min(lo,p.spend);hi=Math.max(hi,p.net,p.spend);}
+    lo=Math.log10(lo*.6);hi=Math.log10(hi*1.6);
+    const top=H*.42,Yv=v=>v<=0?HZ:Math.min(HZ,HZ-(Math.log10(v)-lo)/(hi-lo)*(HZ-top));
+    const mg=cx.createLinearGradient(0,top,0,HZ);
+    mg.addColorStop(0,`rgba(240,${160+Math.round(30*d)},80,.95)`);mg.addColorStop(1,`rgba(${Math.round(60+60*d)},${Math.round(40+40*d)},40,.9)`);
+    cx.beginPath();cx.moveTo(X(Y0),HZ);for(const p of pts)cx.lineTo(X(p.y),Yv(p.net));cx.lineTo(X(YEND),HZ);cx.closePath();
+    cx.fillStyle=mg;cx.fill();
+    cx.beginPath();pts.forEach((p,i)=>i?cx.lineTo(X(p.y),Yv(p.net)):cx.moveTo(X(p.y),Yv(p.net)));
+    cx.strokeStyle='rgba(255,226,170,.9)';cx.lineWidth=1.5;cx.stroke();
+
+    const hx=X(H45);
+    cx.setLineDash([2,5]);cx.strokeStyle='rgba(236,240,244,.34)';cx.lineWidth=1;
+    cx.beginPath();cx.moveTo(hx,HZ);cx.lineTo(hx,top-10);cx.stroke();
+
+    cx.setLineDash([4,5]);cx.beginPath();pts.forEach((p,i)=>i?cx.lineTo(X(p.y),Yv(p.spend)):cx.moveTo(X(p.y),Yv(p.spend)));
+    cx.strokeStyle='rgba(236,240,244,.8)';cx.lineWidth=1.4;cx.stroke();cx.setLineDash([]);
+
+    cx.font='500 12px Figtree, system-ui, sans-serif';cx.textAlign='right';
+    const last=pts[pts.length-1];
+    cx.fillStyle='rgba(236,240,244,.92)';cx.fillText('What life costs',X(YEND)-2,Yv(last.spend)-8);
+    let pk=pts[0];for(const p of pts)if(p.net>pk.net)pk=p;
+    if(pk.net>0){cx.fillStyle='rgba(255,236,200,.95)';cx.textAlign=X(pk.y)>W*.6?'right':'left';
+      cx.fillText('Your net worth',X(pk.y)+(cx.textAlign==='left'?6:-6),Yv(pk.net)-10);}
+
+    if(model.s){const fx=X(model.s),fp=pts[model.s-Y0];
+      cx.strokeStyle='rgba(255,240,215,.75)';cx.lineWidth=1;cx.beginPath();cx.moveTo(fx,HZ);cx.lineTo(fx,Yv(fp.net)-4);cx.stroke();
+      cx.fillStyle='rgba(255,246,230,1)';cx.beginPath();cx.arc(fx,Yv(fp.net),4,0,6.283);cx.fill();
+    }
+  }
+
+  const sg=cx.createLinearGradient(0,HZ,0,H);sg.addColorStop(0,rgb(c[3]));sg.addColorStop(1,rgb(mix(c[3],[0,0,0],.5)));
+  cx.fillStyle=sg;cx.fillRect(0,HZ,W,H-HZ);
+  for(let i=0;i<14;i++){const yy=HZ+6+i*((H-HZ)/15),w=(sr*2.2)*(1-i/16)*(0.7+.3*Math.sin(time/700+i*1.7)*(reduced?0:1));
+    cx.fillStyle=`rgba(255,215,160,${(.22+.35*d)*(1-i/14)})`;cx.fillRect(sx-w/2,yy,w,1.4);}
+  cx.fillStyle='rgba(236,240,244,.55)';cx.font='500 11px Figtree, system-ui, sans-serif';cx.textAlign='center';
+  for(let y=2030;y<=YEND;y+=10){const x=X(y);if(x>28&&x<W-28)cx.fillText(y,x,HZ+18);}
+  cx.fillStyle='rgba(236,240,244,.5)';cx.fillText('Bitcoin24 horizon',X(H45),HZ+34);
+}
+
+let targetN=1,targetSun=.5;
+function loop(t){
+  const k=reduced?1:.07;view.n+=(targetN-view.n)*k;view.sunX+=(targetSun-view.sunX)*k;
+  draw(t);requestAnimationFrame(loop);
+}
+
+/* ---------- ui ---------- */
+let prevS;
+const px=$('px'),cmpBtns=[...document.querySelectorAll('#cmp button')];
+function fill(input){const p=(input.value-input.min)/(input.max-input.min)*100;input.style.setProperty('--p',p+'%');}
+function press(sel,on){document.querySelectorAll(sel+' button').forEach(b=>b.setAttribute('aria-pressed',String(on(b))));}
+
+function stratText(st){
+  if(!st.convert&&!st.excess) return 'Keeps what you own as it is. Your savings go into shares, bonds and cash.';
+  const part=v=>v>=1?'all':Math.round(v*100)+'%';
+  let t=`Moves ${part(st.convert)} of your shares, bonds and cash into Bitcoin today`;
+  if(st.extraMortgage) t+=`, plus a new loan of ${Math.round(st.extraMortgage*100)}% of your real estate's value`;
+  return t+`. ${st.excess>=1?'All':part(st.excess)} of your savings buy Bitcoin each year.`;
+}
+function syncStrategy(){
+  const st=M.STRATEGIES[state.strat],d=Math.round(st.save*100);
+  press('#strats',b=>+b.dataset.strat===state.strat);
+  $('stratHint').textContent=stratText(st);
+  if(state.saveOverride==null){
+    el.save.value=d;$('saveHintText').textContent=`Bitcoin24's default for ${st.name}. Invested each year until you're free.`;$('saveReset').hidden=true;
+  }else{
+    el.save.value=Math.round(state.saveOverride*100);
+    $('saveHintText').textContent=`Your choice. Bitcoin24's ${st.name} saves ${d}%.`;
+    $('saveReset').textContent=`Use ${d}%`;$('saveReset').hidden=false;
+  }
+}
+function sizePrice(){px.style.width=Math.max(5,px.value.length+.6)+'ch';}
+function showPrice(){px.value='$'+Math.round(state.price).toLocaleString('en-US');sizePrice();}
+function priceHint(bad){
+  const h=$('pxHint'),cs=CASES[state.caseKey];
+  px.disabled=state.model==='power';
+  if(state.model==='power'){h.textContent=`Not used by the power law. Its 2026 price on the ${cs.name} path is ${big(M.powerLaw(Y0)*cs.mult)}.`;return;}
+  if(bad){h.textContent='Type a price above $0.';return;}
+  if(state.priceSource==='live') h.textContent='Live price from mempool.space. Edit it if you like.';
+  else if(state.priceSource==='user') h.textContent='Your price.';
+  else h.textContent=`Bitcoin24 model value for 2026, ${cs.name} case. `+(state.live==='pending'?'Checking the live price…':'Edit it to match the market.');
+}
+function useModelPrice(){state.price=Math.round(M.modelPrice(currentCase(),Y0));showPrice();}
+function syncPaths(){
+  press('#models',b=>b.dataset.model===state.model);
+  press('#cases',b=>b.dataset.case===state.caseKey);
+  for(const k in CASES){const c=state.asm.cases[k];$('c'+k).textContent=state.model==='power'?CASES[k].pl:`${pct(c.arr)} → ${pct(c.floor)}`;}
+  const c=currentCase();
+  $('pathHint').textContent=state.model==='power'
+    ?'Each path is a multiple of the power-law trend, every year to 2090.'
+    :`${CASES[state.caseKey].name}: ${pct(c.arr)} a year in 2025, ${num(c.red,2)} points lower each year, never below ${pct(c.floor)}. After 2045, growth with world assets.`;
+  $('asmCase').textContent=CASES[state.caseKey].name;
+}
+
+const ASM=[
+  ['aArr', a=>a.cases[state.caseKey].arr,  (a,v)=>{a.cases[state.caseKey].arr=v;}, 2],
+  ['aRed', a=>a.cases[state.caseKey].red,  (a,v)=>{a.cases[state.caseKey].red=v;}, 2],
+  ['aFloor',a=>a.cases[state.caseKey].floor,(a,v)=>{a.cases[state.caseKey].floor=v;},2],
+  ['mEq',  a=>a.mix.equity,     (a,v)=>{a.mix.equity=v;},     2],
+  ['mRe',  a=>a.mix.realEstate, (a,v)=>{a.mix.realEstate=v;}, 2],
+  ['mBd',  a=>a.mix.bonds,      (a,v)=>{a.mix.bonds=v;},      2],
+  ['mCu',  a=>a.mix.currency,   (a,v)=>{a.mix.currency=v;},   2],
+  ['rEq',  a=>a.returns.equity,     (a,v)=>{a.returns.equity=v;},     'f2'],
+  ['rRe',  a=>a.returns.realEstate, (a,v)=>{a.returns.realEstate=v;}, 'f2'],
+  ['rBd',  a=>a.returns.bonds,      (a,v)=>{a.returns.bonds=v;},      'f2'],
+  ['rCu',  a=>a.returns.currency,   (a,v)=>{a.returns.currency=v;},   'f2'],
+  ['aTax', a=>a.incomeTax,      (a,v)=>{a.incomeTax=v;},      2],
+  ['aGrow',a=>a.earningsGrowth, (a,v)=>{a.earningsGrowth=v;}, 2],
+  ['aMort',a=>a.mortgageShare,  (a,v)=>{a.mortgageShare=v;},  2],
+  ['aRate',a=>a.mortgageRate,   (a,v)=>{a.mortgageRate=v;},   2]
+];
+function syncAssumptions(){
+  for(const [id,get,,d] of ASM){const v=get(state.asm);$(id).value=d==='f2'?(v*100).toFixed(2):num(v,d);}
+  syncMixTotal();
+}
+function syncMixTotal(){
+  const m=state.asm.mix,t=Math.round((m.equity+m.realEstate+m.bonds+m.currency)*1e4)/100,h=$('mixTotal');
+  const ok=Math.abs(t-100)<.01;
+  h.textContent=ok?'Adds to 100%.':`Adds to ${t}%. The model scales the mix to 100%.`;
+  h.classList.toggle('warn',!ok);
+}
+
+function update(fromUser){
+  const pp=pricesNow();
+  const all=M.STRATEGIES.map((_,i)=>M.solve(paramsFor(i),pp.price,SMAX));
+  const p=paramsFor(state.strat),r=all[state.strat];
+  $('btcOut').textContent=btcFmt(p.stack);
+  $('assetsOut').textContent=p.assets?money(p.assets):'Nothing';
+  $('earnOut').textContent=p.earnings?money(p.earnings):'Nothing';
+  $('saveOut').textContent=Math.round(p.save*100)+'%';
+  $('spendOut').textContent=money(p.spend);
+  $('infOut').textContent=el.inf.value+'%';
+  Object.values(el).forEach(fill);
+  model={s:r.s,out:r.rows};const s=r.s,yrs=s==null?null:s-Y0;
+  $('year').textContent=yearWord(s);
+  $('verdict').textContent=s==null?'Life outruns what you own at every start year through 2075. Save more, spend less, or take the bull path.'
+    :s===Y0?'You could stop today. What you own covers your life through 2090.'
+    :`In ${yrs} year${yrs>1?'s':''}, what you own covers your life, through 2090.`;
+  targetN=s==null?1:Math.min(1,yrs/22);targetSun=s==null?.96:(s-Y0)/(YEND-Y0);
+  const o=r.rows;
+  $('rToday').textContent=big(r.netStart);
+  $('r2045').textContent=big(o[H45-Y0].net);
+  $('rPx').textContent=big(pp.price2045);
+  $('rShare').textContent=pct(pp.share2045);
+  $('rFirst').textContent=s==null?'—':btcFmt(o[s-Y0].sold);
+  $('r2090').textContent=btcFmt(o[YEND-Y0].btc);
+  $('trendToday').textContent=money(M.powerLaw(Y0));
+  all.forEach((x,i)=>{const b=cmpBtns[i],y=b.querySelector('b');y.textContent=yearWord(x.s);y.classList.toggle('long',x.s==null);b.setAttribute('aria-pressed',String(i===state.strat));});
+  if(fromUser&&s!==prevS){ if(s===Y0)arrival(); else yearBell(targetN); droneTo(targetN); }
+  prevS=s;
+}
+
+Object.values(el).forEach(i=>i.addEventListener('input',()=>{
+  if(i===el.save){state.saveOverride=+el.save.value/100;syncStrategy();}
+  tick((i.value-i.min)/(i.max-i.min));update(true);
+}));
+function pickStrategy(i){state.strat=i;syncStrategy();update(true);}
+document.querySelectorAll('#strats button,#cmp button').forEach(b=>b.addEventListener('click',()=>pickStrategy(+b.dataset.strat)));
+$('saveReset').addEventListener('click',()=>{state.saveOverride=null;syncStrategy();update(true);el.save.focus();});
+document.querySelectorAll('#models button').forEach(b=>b.addEventListener('click',()=>{
+  state.model=b.dataset.model;syncPaths();priceHint();update(true);
+}));
+document.querySelectorAll('#cases button').forEach(b=>b.addEventListener('click',()=>{
+  state.caseKey=b.dataset.case;if(state.priceSource==='model')useModelPrice();
+  syncPaths();syncAssumptions();priceHint();update(true);
+}));
+px.addEventListener('input',()=>{
+  sizePrice();
+  const v=parseFloat(px.value.replace(/[^0-9.]/g,''));
+  if(!(v>0&&isFinite(v))){priceHint(true);return;}
+  state.price=v;state.priceSource='user';priceHint();update(true);
+});
+px.addEventListener('change',()=>{showPrice();priceHint();});
+for(const [id,,set] of ASM){
+  const inp=$(id);
+  inp.addEventListener('input',()=>{
+    let v=parseFloat(inp.value);if(!isFinite(v))return;
+    v=Math.min(+inp.max,Math.max(+inp.min,v));
+    set(state.asm,v/100);syncMixTotal();
+    if(state.priceSource==='model'&&['aArr','aRed','aFloor'].includes(id))useModelPrice();
+    syncPaths();update(true);
+  });
+  inp.addEventListener('change',()=>syncAssumptions());
+}
+$('reset').addEventListener('click',()=>{
+  state.asm=M.defaultAssumptions();if(state.priceSource==='model')useModelPrice();
+  syncAssumptions();syncPaths();priceHint();update(true);
+});
+
+function fetchLive(){
+  if(!window.fetch||!window.AbortController){state.live='failed';priceHint();return;}
+  const ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),3000);
+  fetch('https://mempool.space/api/v1/prices',{signal:ctl.signal})
+    .then(r=>r.ok?r.json():Promise.reject(new Error('HTTP '+r.status)))
+    .then(j=>{
+      const usd=+(j&&j.USD);if(!(usd>0))throw new Error('No USD price');
+      state.live='ok';
+      if(state.priceSource==='model'){state.price=usd;state.priceSource='live';showPrice();priceHint();update(false);}
+      else priceHint();
+    })
+    .catch(()=>{state.live='failed';priceHint();})
+    .finally(()=>clearTimeout(timer));
+}
+
+useModelPrice();syncStrategy();syncPaths();syncAssumptions();priceHint();
+resize();update(false);view.n=targetN;view.sunX=targetSun;requestAnimationFrame(loop);
+fetchLive();
+})();
+</script>

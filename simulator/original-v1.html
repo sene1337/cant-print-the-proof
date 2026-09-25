@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sovereignty simulator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,500;1,300&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#EDEFEC; --panel:#FFFFFF; --ink:#18212F; --muted:#5A6577; --line:#D3D8DD;
+  --accent:#A8600F; --track:#C9CFD6;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0D1522; --panel:#141E2E; --ink:#ECE7DC; --muted:#98A3B3; --line:#26334A;
+    --accent:#F0AE5A; --track:#2C3A52;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0D1522; --panel:#141E2E; --ink:#ECE7DC; --muted:#98A3B3; --line:#26334A;
+  --accent:#F0AE5A; --track:#2C3A52;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:"Figtree",system-ui,-apple-system,"Segoe UI",sans-serif;font-size:16px;line-height:1.5;
+  -webkit-font-smoothing:antialiased}
+
+.scene{position:relative;height:clamp(440px,72vh,680px);overflow:hidden;background:#0B1626}
+canvas{display:block;width:100%;height:100%}
+.hero{position:absolute;left:0;top:0;padding:22px 22px 0;max-width:36rem;pointer-events:none;color:#F4EEE2;
+  text-shadow:0 1px 18px rgba(5,10,20,.45)}
+.hero h1{margin:0;font-weight:500;font-size:15px;letter-spacing:.01em;opacity:.8}
+.year{font-family:"Cormorant Garamond",Georgia,"Times New Roman",serif;font-weight:300;
+  font-size:clamp(84px,24vw,188px);line-height:.86;margin:10px 0 8px;font-variant-numeric:lining-nums;
+  transition:opacity .3s}
+.verdict{margin:0;font-size:17px;max-width:24ch;line-height:1.35;opacity:.92}
+
+main{max-width:760px;margin:0 auto;padding:28px 20px 96px}
+.controls{display:grid;gap:26px}
+.control{display:grid;grid-template-columns:1fr auto;align-items:baseline;row-gap:10px}
+.control label{font-weight:500}
+.control output{font-family:"Cormorant Garamond",Georgia,serif;font-size:26px;font-weight:500;color:var(--accent);
+  font-variant-numeric:tabular-nums lining-nums}
+.control .hint{grid-column:1/-1;margin:-4px 0 0;font-size:14px;color:var(--muted)}
+input[type=range]{grid-column:1/-1;width:100%;-webkit-appearance:none;appearance:none;background:transparent;height:28px;margin:0}
+input[type=range]::-webkit-slider-runnable-track{height:3px;background:linear-gradient(to right,var(--accent) var(--p,50%),var(--track) var(--p,50%));border-radius:2px}
+input[type=range]::-moz-range-track{height:3px;background:var(--track);border-radius:2px}
+input[type=range]::-moz-range-progress{height:3px;background:var(--accent)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;margin-top:-9.5px;
+  background:var(--panel);border:2px solid var(--accent);box-shadow:0 0 0 6px color-mix(in srgb,var(--accent) 14%,transparent)}
+input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:var(--panel);border:2px solid var(--accent)}
+input[type=range]:focus-visible{outline:2px solid var(--accent);outline-offset:4px;border-radius:4px}
+
+fieldset{border:0;padding:0;margin:0}
+legend{font-weight:500;padding:0;margin-bottom:12px}
+.paths{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.paths button{font:inherit;color:var(--ink);background:transparent;border:0;padding:12px 8px;cursor:pointer;text-align:center;line-height:1.25}
+.paths button+button{border-left:1px solid var(--line)}
+.paths button small{display:block;color:var(--muted);font-size:13px;margin-top:2px}
+.paths button[aria-pressed="true"]{background:var(--accent);color:var(--bg)}
+.paths button[aria-pressed="true"] small{color:inherit;opacity:.8}
+.paths button:focus-visible{outline:2px solid var(--accent);outline-offset:-4px}
+
+.readout{margin:40px 0 0;display:grid;grid-template-columns:repeat(2,1fr);gap:22px 20px;border-top:1px solid var(--line);padding-top:26px}
+.readout div{margin:0}
+.readout dt{font-size:14px;color:var(--muted)}
+.readout dd{margin:2px 0 0;font-family:"Cormorant Garamond",Georgia,serif;font-size:32px;font-weight:500;line-height:1.1;font-variant-numeric:lining-nums}
+@media (min-width:640px){.readout{grid-template-columns:repeat(4,1fr)}}
+
+.note{margin-top:36px;font-size:14px;color:var(--muted);max-width:62ch}
+
+.sound{position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:5;
+  font:500 15px/1 "Figtree",system-ui,sans-serif;color:#F4EEE2;background:rgba(14,22,36,.82);
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);border:1px solid rgba(240,174,90,.55);
+  border-radius:999px;padding:12px 18px;cursor:pointer;display:flex;gap:10px;align-items:center}
+.sound:focus-visible{outline:2px solid #F0AE5A;outline-offset:3px}
+.sound .bars{display:flex;gap:2px;align-items:flex-end;height:14px}
+.sound .bars i{display:block;width:3px;background:#F0AE5A;border-radius:1px;height:4px;transition:height .2s}
+.sound[aria-pressed="true"] .bars i{animation:eq 1.1s ease-in-out infinite}
+.sound[aria-pressed="true"] .bars i:nth-child(2){animation-delay:-.4s}
+.sound[aria-pressed="true"] .bars i:nth-child(3){animation-delay:-.75s}
+@keyframes eq{0%,100%{height:4px}50%{height:14px}}
+@media (prefers-reduced-motion:reduce){.sound[aria-pressed="true"] .bars i{animation:none;height:10px}}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+</style>
+</head>
+<body>
+
+<div class="scene" id="scene">
+  <canvas id="sky" aria-hidden="true"></canvas>
+  <div class="hero">
+    <h1>Sovereignty simulator</h1>
+    <div class="year" id="year">2032</div>
+    <p class="verdict" id="verdict" aria-live="polite"></p>
+  </div>
+</div>
+
+<main>
+  <div class="controls">
+    <div class="control">
+      <label for="btc">Your stack</label><output id="btcOut" for="btc"></output>
+      <input type="range" id="btc" min="0" max="1000" value="492">
+    </div>
+    <div class="control">
+      <label for="spend">What your life costs per year</label><output id="spendOut" for="spend"></output>
+      <input type="range" id="spend" min="0" max="1000" value="541">
+    </div>
+    <div class="control">
+      <label for="inf">Your personal inflation</label><output id="infOut" for="inf"></output>
+      <input type="range" id="inf" min="0" max="15" step="0.5" value="7">
+      <p class="hint">How fast your real costs rise each year, not the CPI.</p>
+    </div>
+    <div class="control">
+      <label for="add">Bitcoin you buy each year until you're free</label><output id="addOut" for="add"></output>
+      <input type="range" id="add" min="0" max="500000" step="5000" value="0">
+    </div>
+    <fieldset>
+      <legend>Price path</legend>
+      <div class="paths" role="group">
+        <button type="button" data-mult="0.5" aria-pressed="false">Bear<small>half of trend</small></button>
+        <button type="button" data-mult="1" aria-pressed="true">Base<small>power-law trend</small></button>
+        <button type="button" data-mult="1.6" aria-pressed="false">Bull<small>1.6× trend</small></button>
+      </div>
+    </fieldset>
+  </div>
+
+  <dl class="readout">
+    <div><dt>Stack value today</dt><dd id="rToday"></dd></div>
+    <div><dt>Sold in your first free year</dt><dd id="rFirst"></dd></div>
+    <div><dt>Still yours in 2050</dt><dd id="r2050"></dd></div>
+    <div><dt>Still yours in 2090</dt><dd id="r2090"></dd></div>
+  </dl>
+
+  <p class="note">The model: Bitcoin follows its long-run power-law trend (price ≈ 1.0117×10⁻¹⁷ × days since the genesis block, raised to the 5.82), scaled by your price path. Your spending rises at your inflation rate. In your freedom year you stop buying and start selling to cover life, and you must never run out before 2090. Trend price today works out to about <span id="trendToday"></span>, which can sit well above or below spot. An illustration, not advice.</p>
+</main>
+
+<button class="sound" id="sound" type="button" aria-pressed="false">
+  <span class="bars" aria-hidden="true"><i></i><i></i><i></i></span><span id="soundLabel">Play sound</span>
+</button>
+
+<script>
+(function(){
+"use strict";
+const GENESIS=Date.UTC(2009,0,3), DAY=864e5, Y0=2026, YEND=2090, SMAX=2075;
+const reduced=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const $=id=>document.getElementById(id);
+
+function trend(y){const d=(Date.UTC(y,8,24)-GENESIS)/DAY;return 1.0117e-17*Math.pow(d,5.82);}
+
+const state={mult:1};
+const el={btc:$('btc'),spend:$('spend'),inf:$('inf'),add:$('add')};
+const btcFrom=v=>Math.pow(10,-1+3*v/1000);
+const spendFrom=v=>30000*Math.pow(10,1.5229*v/1000);
+
+function money(v){
+  if(v>=1e9) return '$'+(v/1e9).toFixed(v>=1e10?0:1)+'B';
+  if(v>=1e6) return '$'+(v/1e6).toFixed(v>=1e7?0:1)+'M';
+  if(v>=1e3) return '$'+Math.round(v/1e3)+'K';
+  return '$'+Math.round(v);
+}
+function btcFmt(b){ if(b<=0) return '0 BTC'; if(b<0.01) return Math.round(b*1e8).toLocaleString()+' sats'; return (b<10?b.toFixed(2):b.toFixed(1))+' BTC'; }
+
+function params(){return{btc:btcFrom(+el.btc.value),spend:spendFrom(+el.spend.value),inf:+el.inf.value/100,add:+el.add.value,mult:state.mult};}
+
+function simulate(p,s){
+  let btc=p.btc,ok=true;const out=[];
+  for(let y=Y0;y<=YEND;y++){
+    const price=trend(y)*p.mult, spend=p.spend*Math.pow(1+p.inf,y-Y0);
+    let sold=0;
+    if(y<s) btc+=p.add/price; else {sold=spend/price;btc-=sold;}
+    if(btc<0){ok=false;btc=0;}
+    out.push({y,btc,price,value:btc*price,spend,sold});
+  }
+  return{ok,out};
+}
+function solve(p){
+  for(let s=Y0;s<=SMAX;s++){const r=simulate(p,s);if(r.ok)return{s,out:r.out};}
+  return{s:null,out:simulate(p,YEND+1).out};
+}
+
+/* ---------- audio ---------- */
+const A={on:false,ctx:null};
+function impulse(ctx,sec){
+  const len=ctx.sampleRate*sec,b=ctx.createBuffer(2,len,ctx.sampleRate);
+  for(let c=0;c<2;c++){const d=b.getChannelData(c);for(let i=0;i<len;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2.6);}
+  return b;
+}
+function initAudio(){
+  const ctx=new (window.AudioContext||window.webkitAudioContext)();A.ctx=ctx;
+  const master=ctx.createGain();master.gain.value=0;A.master=master;
+  const comp=ctx.createDynamicsCompressor();master.connect(comp).connect(ctx.destination);
+  const bus=ctx.createGain();bus.connect(master);
+  const conv=ctx.createConvolver();conv.buffer=impulse(ctx,3.4);
+  const wet=ctx.createGain();wet.gain.value=.42;bus.connect(conv);conv.connect(wet).connect(master);
+  A.bus=bus;
+  const f=ctx.createBiquadFilter();f.type='lowpass';f.frequency.value=500;f.Q.value=.8;A.filter=f;
+  const dg=ctx.createGain();dg.gain.value=.14;f.connect(dg).connect(bus);
+  const mk=(fr,type,g,det)=>{const o=ctx.createOscillator();o.type=type;o.frequency.value=fr;o.detune.value=det||0;
+    const gg=ctx.createGain();gg.gain.value=g;o.connect(gg).connect(f);o.start();return gg;};
+  mk(55,'triangle',.9);mk(55,'sawtooth',.12,7);mk(82.41,'triangle',.55,-4);mk(110,'sine',.35,3);
+  A.minor=mk(130.81,'sine',.0);A.major=mk(138.59,'sine',.0);
+  const lfo=ctx.createOscillator();lfo.frequency.value=.06;const lg=ctx.createGain();lg.gain.value=180;lfo.connect(lg).connect(f.frequency);lfo.start();
+}
+function droneTo(n){
+  if(!A.on)return;const t=A.ctx.currentTime;
+  A.filter.frequency.setTargetAtTime(260+(1-n)*1700,t,.5);
+  A.minor.gain.setTargetAtTime(.32*n,t,.6);A.major.gain.setTargetAtTime(.32*(1-n),t,.6);
+}
+function bell(freq,vol){
+  if(!A.on)return;const ctx=A.ctx,t=ctx.currentTime;
+  [[1,1,3.2],[2.76,.42,1.7],[5.4,.2,.9],[8.93,.08,.45]].forEach(([r,g,d])=>{
+    const o=ctx.createOscillator();o.type='sine';o.frequency.value=freq*r;
+    const e=ctx.createGain();e.gain.setValueAtTime(0,t);e.gain.linearRampToValueAtTime(vol*g,t+.008);e.gain.exponentialRampToValueAtTime(1e-4,t+d);
+    o.connect(e).connect(A.bus);o.start(t);o.stop(t+d+.05);
+  });
+}
+let lastTick=0;
+function tick(v){
+  if(!A.on)return;const now=performance.now();if(now-lastTick<38)return;lastTick=now;
+  const ctx=A.ctx,t=ctx.currentTime,o=ctx.createOscillator(),e=ctx.createGain();
+  o.type='sine';o.frequency.value=520+v*900;
+  e.gain.setValueAtTime(.05,t);e.gain.exponentialRampToValueAtTime(1e-4,t+.05);
+  o.connect(e).connect(A.master);o.start(t);o.stop(t+.06);
+}
+const PENTA=[0,3,5,7,10,12,15,17,19,22,24];
+function yearBell(n){bell(220*Math.pow(2,PENTA[Math.round((1-n)*(PENTA.length-1))]/12),.16);}
+function arrival(){[0,4,7,12,16].forEach((s,i)=>setTimeout(()=>bell(440*Math.pow(2,s/12),.13),i*140));}
+
+$('sound').addEventListener('click',()=>{
+  if(!A.ctx)initAudio();
+  A.on=!A.on;const t=A.ctx.currentTime;
+  if(A.on){A.ctx.resume();A.master.gain.cancelScheduledValues(t);A.master.gain.setTargetAtTime(.9,t,.8);droneTo(view.n);yearBell(view.n);}
+  else A.master.gain.setTargetAtTime(0,t,.25);
+  $('sound').setAttribute('aria-pressed',A.on);$('soundLabel').textContent=A.on?'Sound on':'Play sound';
+});
+
+/* ---------- scene ---------- */
+const cv=$('sky'),cx=cv.getContext('2d');let W=0,H=0,dpr=1;
+const stars=Array.from({length:150},()=>({x:Math.random(),y:Math.random()*.72,r:Math.random()*1.2+.3,p:Math.random()*6.28,s:.5+Math.random()*1.5}));
+function resize(){dpr=Math.min(window.devicePixelRatio||1,2);W=cv.clientWidth;H=cv.clientHeight;cv.width=W*dpr;cv.height=H*dpr;cx.setTransform(dpr,0,0,dpr,0,0);}
+window.addEventListener('resize',resize);
+
+const NIGHT=[[9,19,36],[22,36,62],[40,52,82],[8,15,27]];
+const DAWN =[[46,74,120],[214,142,120],[246,206,150],[44,70,96]];
+const mix=(a,b,t)=>a.map((v,i)=>Math.round(v+(b[i]-v)*t));
+const rgb=(c,a)=>a==null?`rgb(${c})`:`rgba(${c},${a})`;
+
+let model=null;
+const view={n:1,sunX:.5};
+
+function draw(time){
+  const n=view.n,d=1-n,HZ=H*.8,pad=18;
+  const c=NIGHT.map((v,i)=>mix(v,DAWN[i],d));
+  const g=cx.createLinearGradient(0,0,0,HZ);
+  g.addColorStop(0,rgb(c[0]));g.addColorStop(.62,rgb(c[1]));g.addColorStop(1,rgb(c[2]));
+  cx.fillStyle=g;cx.fillRect(0,0,W,HZ);
+
+  const sa=Math.max(0,n*1.1-.1);
+  if(sa>0){for(const s of stars){const tw=reduced?1:.55+.45*Math.sin(time/1000*s.s+s.p);
+    cx.fillStyle=`rgba(236,232,220,${sa*tw*.9})`;cx.beginPath();cx.arc(s.x*W,s.y*HZ,s.r,0,6.283);cx.fill();}}
+
+  const X=y=>pad+(y-Y0)/(YEND-Y0)*(W-pad*2);
+  const sx=pad+view.sunX*(W-pad*2), sy=HZ+26-d*HZ*.42, sr=Math.max(26,W*.05);
+  const glow=cx.createRadialGradient(sx,sy,0,sx,sy,sr*7);
+  glow.addColorStop(0,`rgba(255,214,150,${.55*d+.08})`);glow.addColorStop(1,'rgba(255,190,120,0)');
+  cx.fillStyle=glow;cx.fillRect(0,0,W,HZ);
+  cx.fillStyle=`rgba(255,${Math.round(200+40*d)},${Math.round(140+60*d)},${.35+.65*d})`;
+  cx.beginPath();cx.arc(sx,sy,sr,0,6.283);cx.fill();
+
+  if(model){
+    const pts=model.out;let lo=Infinity,hi=0;
+    for(const p of pts){lo=Math.min(lo,p.spend);hi=Math.max(hi,p.value,p.spend);}
+    lo=Math.log10(lo*.6);hi=Math.log10(hi*1.6);
+    const top=H*.42,Yv=v=>v<=0?HZ:Math.min(HZ,HZ-(Math.log10(v)-lo)/(hi-lo)*(HZ-top));
+    const mg=cx.createLinearGradient(0,top,0,HZ);
+    mg.addColorStop(0,`rgba(240,${160+Math.round(30*d)},80,.95)`);mg.addColorStop(1,`rgba(${Math.round(60+60*d)},${Math.round(40+40*d)},40,.9)`);
+    cx.beginPath();cx.moveTo(X(Y0),HZ);for(const p of pts)cx.lineTo(X(p.y),Yv(p.value));cx.lineTo(X(YEND),HZ);cx.closePath();
+    cx.fillStyle=mg;cx.fill();
+    cx.beginPath();pts.forEach((p,i)=>i?cx.lineTo(X(p.y),Yv(p.value)):cx.moveTo(X(p.y),Yv(p.value)));
+    cx.strokeStyle='rgba(255,226,170,.9)';cx.lineWidth=1.5;cx.stroke();
+
+    cx.setLineDash([4,5]);cx.beginPath();pts.forEach((p,i)=>i?cx.lineTo(X(p.y),Yv(p.spend)):cx.moveTo(X(p.y),Yv(p.spend)));
+    cx.strokeStyle='rgba(236,240,244,.8)';cx.lineWidth=1.4;cx.stroke();cx.setLineDash([]);
+
+    cx.font='500 12px Figtree, system-ui, sans-serif';cx.textAlign='right';
+    const last=pts[pts.length-1];
+    cx.fillStyle='rgba(236,240,244,.92)';cx.fillText('What life costs',X(YEND)-2,Yv(last.spend)-8);
+    let pk=pts[0];for(const p of pts)if(p.value>pk.value)pk=p;
+    if(pk.value>0){cx.fillStyle='rgba(255,236,200,.95)';cx.textAlign=X(pk.y)>W*.6?'right':'left';
+      cx.fillText('Your stack',X(pk.y)+(cx.textAlign==='left'?6:-6),Yv(pk.value)-10);}
+
+    if(model.s){const fx=X(model.s),fp=pts[model.s-Y0];
+      cx.strokeStyle='rgba(255,240,215,.75)';cx.lineWidth=1;cx.beginPath();cx.moveTo(fx,HZ);cx.lineTo(fx,Yv(fp.value)-4);cx.stroke();
+      cx.fillStyle='rgba(255,246,230,1)';cx.beginPath();cx.arc(fx,Yv(fp.value),4,0,6.283);cx.fill();
+    }
+  }
+
+  const sg=cx.createLinearGradient(0,HZ,0,H);sg.addColorStop(0,rgb(c[3]));sg.addColorStop(1,rgb(mix(c[3],[0,0,0],.5)));
+  cx.fillStyle=sg;cx.fillRect(0,HZ,W,H-HZ);
+  for(let i=0;i<14;i++){const yy=HZ+6+i*((H-HZ)/15),w=(sr*2.2)*(1-i/16)*(0.7+.3*Math.sin(time/700+i*1.7)*(reduced?0:1));
+    cx.fillStyle=`rgba(255,215,160,${(.22+.35*d)*(1-i/14)})`;cx.fillRect(sx-w/2,yy,w,1.4);}
+  cx.fillStyle='rgba(236,240,244,.55)';cx.font='500 11px Figtree, system-ui, sans-serif';cx.textAlign='center';
+  for(let y=2030;y<=YEND;y+=10){const x=X(y);if(x>28&&x<W-28)cx.fillText(y,x,HZ+18);}
+}
+
+let targetN=1,targetSun=.5;
+function loop(t){
+  const k=reduced?1:.07;view.n+=(targetN-view.n)*k;view.sunX+=(targetSun-view.sunX)*k;
+  draw(t);requestAnimationFrame(loop);
+}
+
+/* ---------- ui ---------- */
+let prevS;
+function fill(input){const p=(input.value-input.min)/(input.max-input.min)*100;input.style.setProperty('--p',p+'%');}
+function update(fromUser){
+  const p=params();
+  $('btcOut').textContent=btcFmt(p.btc);$('spendOut').textContent=money(p.spend);
+  $('infOut').textContent=p.inf*100+'%';$('addOut').textContent=p.add?money(p.add):'Nothing';
+  Object.values(el).forEach(fill);
+  model=solve(p);const s=model.s,yrs=s==null?null:s-Y0;
+  $('year').textContent=s==null?'Not yet':s===Y0?'Now':s;
+  $('verdict').textContent=s==null?'Life outruns the stack at every start year through 2075. Grow it, spend less, or take the bull path.'
+    :s===Y0?'You could stop today. The stack covers your life through 2090.'
+    :`In ${yrs} year${yrs>1?'s':''}, your stack covers your life, through 2090.`;
+  targetN=s==null?1:Math.min(1,yrs/22);targetSun=s==null?.96:(s-Y0)/(YEND-Y0);
+  const o=model.out;
+  $('rToday').textContent=money(p.btc*trend(Y0)*p.mult);
+  $('rFirst').textContent=s==null?'—':btcFmt(o[s-Y0].sold);
+  $('r2050').textContent=btcFmt(o[2050-Y0].btc);$('r2090').textContent=btcFmt(o[YEND-Y0].btc);
+  $('trendToday').textContent=money(trend(Y0));
+  if(fromUser&&s!==prevS){ if(s===Y0)arrival(); else yearBell(targetN); droneTo(targetN); }
+  prevS=s;
+}
+Object.values(el).forEach(i=>i.addEventListener('input',()=>{tick((i.value-i.min)/(i.max-i.min));update(true);}));
+document.querySelectorAll('.paths button').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('.paths button').forEach(x=>x.setAttribute('aria-pressed',x===b));
+  state.mult=+b.dataset.mult;update(true);
+}));
+
+resize();update(false);view.n=targetN;view.sunX=targetSun;requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

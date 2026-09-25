@@ -1,0 +1,22 @@
+{
+  "name": "cant-print-the-proof",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Can't Print the Proof: a music video that plays live in your browser. Every frame is a mined proof-of-work block.",
+  "scripts": {
+    "serve": "python3 -m http.server 8787",
+    "vendor": "node tools/vendor.mjs",
+    "render": "node tools/render.mjs",
+    "check": "node tools/check.mjs"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@fontsource/cormorant-garamond": "^5.3.0",
+    "@fontsource/figtree": "^5.3.0",
+    "@fontsource/jetbrains-mono": "^5.3.0",
+    "@fontsource/playfair-display": "^5.3.0",
+    "playwright": "^1.63.0",
+    "three": "^0.186.1"
+  }
+}
