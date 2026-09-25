@@ -4,10 +4,25 @@ import { hash1 } from '../util.js';
 
 const NOTE_W = 2.35, NOTE_H = 1.0;
 
+// A double-sided plane shows its print mirror-reversed from behind. Flip U on back faces so a note reads
+// correctly from either side. (Technique from the bridge section's notes.)
+const flipUv = (uv) => `noteFlipUv( ${uv} )`;
+const MAP_CHUNK = THREE.ShaderChunk.map_fragment.replace('texture2D( map, vMapUv )', `texture2D( map, ${flipUv('vMapUv')} )`);
+const EMISSIVE_CHUNK = THREE.ShaderChunk.emissivemap_fragment.replace('texture2D( emissiveMap, vEmissiveMapUv )', `texture2D( emissiveMap, ${flipUv('vEmissiveMapUv')} )`);
+export function readableBothSides(sh) {
+  sh.fragmentShader = sh.fragmentShader
+    .replace('#include <common>', `#include <common>
+      vec2 noteFlipUv(vec2 uv) { return gl_FrontFacing ? uv : vec2(1.0 - uv.x, uv.y); }`)
+    .replace('#include <map_fragment>', MAP_CHUNK)
+    .replace('#include <emissivemap_fragment>', EMISSIVE_CHUNK);
+}
+
 function bendMaterial(map, { emissive = 0.08, rough = 0.85 } = {}) {
   const mat = new THREE.MeshStandardMaterial({ map, side: THREE.DoubleSide, roughness: rough, metalness: 0, emissive: new THREE.Color(1, 1, 1), emissiveMap: map, emissiveIntensity: emissive });
   mat.userData.uniforms = { uTime: { value: 0 }, uFlutter: { value: 1 } };
+  mat.customProgramCacheKey = () => 'note-cloud-both-sides';
   mat.onBeforeCompile = (sh) => {
+    readableBothSides(sh);
     sh.uniforms.uTime = mat.userData.uniforms.uTime;
     sh.uniforms.uFlutter = mat.userData.uniforms.uFlutter;
     sh.vertexShader = sh.vertexShader

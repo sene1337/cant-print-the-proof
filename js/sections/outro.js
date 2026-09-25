@@ -7,6 +7,7 @@ import { Coin } from '../props/coin.js';
 import { Block, link } from '../props/block.js';
 import { Dust } from '../props/dust.js';
 import { cowrie as v1Cowrie } from '../props/verse1-cowrie.js';
+import { readableBothSides } from '../props/notes.js';
 import { coinFace, edgeText, banknote, textCard, loadImage, TEX } from '../tex.js';
 import { clamp, lerp, smooth, easeOut, easeIn, easeInOut, easeOutBack, pulse, range, hash1 } from '../util.js';
 
@@ -116,7 +117,10 @@ async function turntable(film) {
   const np = noteGeo.attributes.position;
   for (let i = 0; i < np.count; i++) np.setZ(i, Math.sin(np.getX(i) * 1.1) * 0.08);
   noteGeo.computeVertexNormals();
-  const note = new THREE.Mesh(noteGeo, new THREE.MeshStandardMaterial({ map: noteTex, side: THREE.DoubleSide, roughness: 0.8 }));
+  const noteMat = new THREE.MeshStandardMaterial({ map: noteTex, side: THREE.DoubleSide, roughness: 0.8 });
+  noteMat.customProgramCacheKey = () => 'outro-note-both-sides';
+  noteMat.onBeforeCompile = readableBothSides;
+  const note = new THREE.Mesh(noteGeo, noteMat);
   const last = film.chain.block(film.chain.n - 1);
   const block = new Block({ hash: last.hash, height: '#' + last.i.toLocaleString('en-US'), nonce: last.nonce, style: 'engraved' });
   block.scale.setScalar(0.95);

@@ -35,21 +35,27 @@ export const stages = {
 // Add shots with S(t, stageId, cam, set, fx). Every shot must start inside this section's range.
 export function shots(S, T) {
   const B = (t) => T.beats[T.beatIndex(t + 0.02)]; // snap to the beat at t
+  const HALL = { exposure: 1.3, contrast: 1.14, vignette: 0.4, bloom: 0.32 }; // the printing hall must read, not murk
 
   // ---- BREAK: the printer runs --------------------------------------------------------------------------
   // 1. The nip: two engraved chrome rollers spin and notes shoot out of the green line straight at the lens.
   S(102.26, 'bridge-press', moveCam({ from: [3.8, -0.7, 6.4], to: [3.0, -0.45, 5.2], look: [-1.0, 0.0, 1.6], look2: [-0.6, 0.0, 1.8], fov: 34, ease: easeInOut }),
-    (s, c) => { s.jet(c.t, { others: false }); },
+    (s, c) => {
+      s.jet(c.t, { others: false });
+      // The close-up keeps its darker, harder light; the brighter hall light is for the wide shots.
+      s.cloud.material.emissiveIntensity = 0.12;
+      s.top.intensity = 0.45; s.heroSpot.intensity = 60; s.scene.fog.density = 0.012;
+    },
     { aperture: 0.0001, focus: 5.4, maxblur: 0.005 });
   // 2. From the side: the jet arcs out of the machine and pours down into the sea of paper.
   S(B(104.4), 'bridge-press', moveCam({ from: [-16, 1.5, 13], to: [-20, 3, 17], look: [0, -4, 8.5], look2: [0, -4.5, 10], fov: 38, ease: easeInOut }),
-    (s, c) => { s.jet(c.t, { others: false }); });
+    (s, c) => { s.jet(c.t, { others: false }); }, HALL);
   // 3. Crane up and back: one printer, an ocean of paper, fluorescent tubes to the horizon.
   S(B(106.37), 'bridge-press', moveCamCapped({ from: [26, 5, 36], to: [36, 9.5, 50], look: [0, -4, 10], look2: [0, -4.5, 12], fov: 40, ease: easeInOut, maxY: 11 }),
-    (s, c) => { s.jet(c.t, { others: false }); s.scene.fog.density = 0.009; });
+    (s, c) => { s.jet(c.t, { others: false }); s.scene.fog.density = 0.006; }, HALL);
   // 4. The flood fills the world: on every hit of the drum fill the next printers down the wall switch on.
   S(B(108.33), 'bridge-press', moveCamCapped({ from: [-6, 7, 24], to: [-15, 10.5, 38], look: [26, -4.5, 3], look2: [34, -5, 5], fov: 42, ease: easeOut, maxY: 11 }),
-    (s, c) => { s.jet(c.t); s.scene.fog.density = 0.009; });
+    (s, c) => { s.jet(c.t); s.scene.fog.density = 0.006; }, HALL);
 
   // ---- THE DROP: silence --------------------------------------------------------------------------------
   // 5. One note falls through a shaft of light and lands on the stone as the band breathes back in.
@@ -81,15 +87,16 @@ export function shots(S, T) {
       s.vaultLight.intensity = 30 * g;
       s.vaultMat.color.setRGB(0.1, 0.5, 0.25).multiplyScalar(0.3 + 2.5 * g);
     });
-  // 8. "and the savers got took": the small coins on the bottom step slide off the edge into the dark.
-  S(tAnd, 'bridge-bank', moveCam({ from: [0.9, -1.05, 7.0], to: [0.7, -1.3, 6.5], look: [0.25, -2.15, 4.75], look2: [0.3, -3.1, 5.5], fov: 38, ease: easeInOut }),
+  // 8. "and the savers got took": the savers' heap of coins at the bank's door drains into a crack that opens in the stone.
+  S(tAnd, 'bridge-bank', moveCam({ from: [0.35, 1.5, 3.95], to: [0.22, 1.28, 3.45], look: [0, 0.06, 0.95], look2: [0, 0.02, 0.95], fov: 38, ease: easeInOut }),
     (s, c) => {
-      s.coinsAt(c.t, tSavers - 0.1);
-      s.coinKey.intensity = 60;
-      s.scene.environmentIntensity = lerp(0.55, 0.12, smooth(clamp((c.u - 0.35) / 0.5)));
-      s.flood.intensity = 120;
+      s.heapAt(c.t, tSavers - 0.05);
+      // White key on the coins; the alarm red stays on the wall behind instead of tinting the metal.
+      s.coinKey.intensity = 24;
+      s.redL.intensity = s.redR.intensity = 4 + 7 * c.kick;
+      s.rimRed.intensity = 0;
     },
-    { aperture: 0.00015, focus: 3.3, maxblur: 0.006 });
+    { aperture: 0.00012, focus: 2.9, maxblur: 0.006 });
 
   // ---- THE HEADLINE ------------------------------------------------------------------------------------------
   const tStop = B(117.43);                       // the paper slams square on this beat
@@ -101,7 +108,7 @@ export function shots(S, T) {
     cam.position.set(lerp(0.3, 0.05, u), lerp(0.45, 0.75, u), d);
     cam.lookAt(0, lerp(0.55, 0.78, u), 0);
     cam.fov = 35;
-  }, (s, c) => { s.spinIn(c.t, tChancellor, tStop); }, { cutFlash: 0 });
+  }, (s, c) => { s.spinIn(c.t, tChancellor, tStop, 1.25, -13); }, { cutFlash: 0 });
   // 10. Cut to three-quarters: the room goes dark and an orange light rises behind the page, beating like a heart.
   S(tDark, 'bridge-news', (c, cam) => {
     const u = easeInOut(c.u);
@@ -111,11 +118,12 @@ export function shots(S, T) {
     cam.lookAt(0.15, 0.72, 0);
     cam.fov = 35;
   }, (s, c) => {
-    const off = 1 - smooth(clamp(c.lt / 0.45));
-    s.key.intensity = 70 * off;
-    s.fill.intensity = 0.25 * off;
-    const rise = smooth(clamp((c.lt - 0.15) / 1.6));
+    // The room dims but never goes black, so the whole headline stays readable while the light rises behind it.
+    const off = smooth(clamp(c.lt / 0.5)), handover = smooth(clamp((c.lt - 0.6) / 0.8));
+    s.key.intensity = lerp(lerp(70, 22, off), 5, handover);
+    s.fill.intensity = lerp(0.25, 0.04, off);
+    const rise = smooth(clamp((c.lt - 0.1) / 1.3));
     const surge = smooth(clamp((c.lt - 1.5) / 0.4));
-    s.backlight(rise * (1.0 + 0.45 * c.kick) + 0.35 * surge + 0.04, lerp(0.1, 0.33, rise) + 0.05 * surge);
+    s.backlight(0.3 + rise * (1.1 + 0.45 * c.kick) + 0.4 * surge, lerp(0.3, 0.42, rise) + 0.04 * surge);
   });
 }

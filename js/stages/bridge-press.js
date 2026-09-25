@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { studioEnv } from '../film.js';
 import { NoteCloud } from '../props/notes.js';
 import { normalFromHeight } from '../tex.js';
-import { bridgeNote } from '../props/bridge-note.js';
+import { bridgeNote, readableBothSides } from '../props/bridge-note.js';
 import { clamp, hash1, lerp, rng } from '../util.js';
 
 export const PRESS = {
@@ -239,6 +239,7 @@ export async function pressStage(film) {
   const gearGeo = gearGeometry(R + gap, 28, 0.14, 0.32);
   const nipGeo = new THREE.BoxGeometry(L * 0.995, 0.035, 0.6);
   const haloGeo = new THREE.PlaneGeometry(L + 0.7, 6.1);
+  const lampGeo = new THREE.PlaneGeometry(L + 1.6, 0.42);
 
   function makeUnit(x, tOn) {
     const g = new THREE.Group();
@@ -261,6 +262,11 @@ export async function pressStage(film) {
     const halo = new THREE.Mesh(haloGeo, haloMat);
     halo.position.set(0, 0, 0.03);
     g.add(halo);
+    // A lamp strip on the wall above the printer: dark while idle, blazing once it runs.
+    const lampMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.55, 1, 0.7) });
+    const lamp = new THREE.Mesh(lampGeo, lampMat);
+    lamp.position.set(0, 4.1, 0.06);
+    g.add(lamp);
     const gears = [];
     for (const side of [-1, 1]) {
       const f = new THREE.Mesh(frameGeo, frameMat);
@@ -275,7 +281,7 @@ export async function pressStage(film) {
       }
     }
     machine.add(g);
-    return { group: g, x, tOn, rollTop, rollBot, nip, nipMat, halo, haloMat, gears };
+    return { group: g, x, tOn, rollTop, rollBot, nip, nipMat, halo, haloMat, lamp, lampMat, gears };
   }
   const units = [makeUnit(0, -1e9)];
   PRESS.waveOn.forEach((tOn, i) => {
@@ -285,7 +291,7 @@ export async function pressStage(film) {
   const main = units[0];
 
   // Fluorescent tubes: an endless ceiling grid over the sea, plus a row on the wall above the printers.
-  const tubeGeo = new THREE.CylinderGeometry(0.07, 0.07, 3.6, 8).rotateZ(Math.PI / 2);
+  const tubeGeo = new THREE.CylinderGeometry(0.1, 0.1, 3.6, 8).rotateZ(Math.PI / 2);
   const tubeMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.78, 1, 0.84).multiplyScalar(2.6), fog: true });
   const tubePos = [];
   for (let i = -18; i <= 18; i++) for (let j = 0; j < 20; j++) tubePos.push([i * 7 + (j % 2) * 3.5, 13, 3 + j * 7]);
@@ -310,7 +316,7 @@ export async function pressStage(film) {
   seaMap.repeat.set(36, 36);
   const sea = new THREE.Mesh(
     new THREE.PlaneGeometry(720, 720),
-    new THREE.MeshStandardMaterial({ map: seaMap, roughness: 0.92, metalness: 0, color: 0xa9b8ae, emissive: new THREE.Color(0.2, 0.32, 0.24), emissiveMap: seaMap, emissiveIntensity: 0.18 }),
+    new THREE.MeshStandardMaterial({ map: seaMap, roughness: 0.92, metalness: 0, color: 0xc8d6cc, emissive: new THREE.Color(0.2, 0.32, 0.24), emissiveMap: seaMap, emissiveIntensity: 0.34 }),
   );
   sea.rotation.x = -Math.PI / 2;
   sea.position.set(0, -13, 260);
@@ -321,7 +327,8 @@ export async function pressStage(film) {
   scene.add(heroSpot, heroSpot.target);
 
   // The notes.
-  const cloud = new NoteCloud(noteTex, 6400, { emissive: 0.12 });
+  const cloud = new NoteCloud(noteTex, 6400, { emissive: 0.2 });
+  readableBothSides(cloud.material, 'press');
   scene.add(cloud);
 
   const G = 9.8, VT = 5.5, KD = 0.55;
@@ -391,6 +398,7 @@ export async function pressStage(film) {
         const k = on ? 2.5 + 2 * surge + 2.5 * low + flare : 0.02;
         un.nipMat.color.setRGB(0.55, 1, 0.7).multiplyScalar(k);
         un.haloMat.color.setRGB(0.3, 0.9, 0.5).multiplyScalar(on ? 0.5 + 0.6 * low + flare * 0.3 : 0.015);
+        un.lampMat.color.setRGB(0.55, 1, 0.7).multiplyScalar(on ? 2.4 + flare * 1.2 : 0.03);
         un.group.visible = true;
       }
       sea.position.y = seaLevel(t);
@@ -398,6 +406,7 @@ export async function pressStage(film) {
       machine.visible = true;
       tubes.visible = true;
       cloud.visible = false;
+      cloud.material.emissiveIntensity = 0.2; // notes glow enough to read in the hall; the close-up dials it down
       nipLight.intensity = 0.7 + 1.0 * low;
       tubeMat.color.setRGB(0.78, 1, 0.84).multiplyScalar(2.3 + 0.5 * high);
       // Tubes: off, a stutter when they strike, then on.
@@ -411,10 +420,10 @@ export async function pressStage(film) {
       tubes.instanceColor.needsUpdate = true;
       // The hall's overall light follows how many tubes are burning.
       const litFrac = lit / tubeOn.length;
-      top.intensity = 0.35 + 2.4 * litFrac;
-      heroSpot.intensity = 60;
+      top.intensity = 1.1 + 2.6 * litFrac;
+      heroSpot.intensity = 110;
       rim.intensity = 1.2;
-      scene.fog.density = 0.012;
+      scene.fog.density = 0.009;
       scene.environmentIntensity = 0.5;
     },
   };

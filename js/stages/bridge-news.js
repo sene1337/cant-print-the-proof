@@ -101,13 +101,13 @@ export async function newsStage(film) {
     scene, key, fill, paper, holder, halo, mat, U,
     fx: { bloom: 0.5, threshold: 1.0, bloomRadius: 0.5, grain: 0.06, vignette: 0.6, tint: [1.02, 1.0, 0.96], sat: 0.95, contrast: 1.08 },
     // Old-movie insert: spins out of the dark and slams square at tStop.
-    spinIn(t, t0, tStop, turns = 1.5) {
+    spinIn(t, t0, tStop, turns = 1.5, zFrom = -46) {
       const u = clamp((t - t0) / (tStop - t0));
       const e = easeOut(u, 2.2);
       const after = Math.max(0, t - tStop);
       const settle = after > 0 ? Math.exp(-after * 9) * Math.sin(after * 30) * 0.035 : 0;
       holder.rotation.set(0, 0, (1 - e) * turns * Math.PI * 2 + settle);
-      holder.position.set(0, 0, lerp(-46, 0, e));
+      holder.position.set(0, 0, lerp(zFrom, 0, e));
     },
     // Backlight: glow gain k (0..), radius in page units.
     backlight(k, r = 0.35) {

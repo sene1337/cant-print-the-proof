@@ -1,13 +1,13 @@
 // The bank (bridge, 112.23-116.96): a stone temple of money at night under alarm-red light.
 // It shakes on the hits and cracks spread across its carved motto; a torrent of new notes pours into it
-// from the sky; the savers' coins slide off its bottom step into the dark.
+// from the sky; the savers' heap of coins at its door drains into a crack in the stone.
 import * as THREE from 'three';
 import { studioEnv } from '../film.js';
 import { NoteCloud } from '../props/notes.js';
-import { Coin } from '../props/coin.js';
+import { METALS } from '../props/coin.js';
 import { coinFace, normalFromHeight } from '../tex.js';
-import { bridgeNote } from '../props/bridge-note.js';
-import { clamp, hash1, lerp, rng, smooth, easeOut } from '../util.js';
+import { bridgeNote, readableBothSides } from '../props/bridge-note.js';
+import { clamp, hash1, lerp, rng, smooth, easeOut, easeIn } from '../util.js';
 
 // Layout (bank space: columns stand on the stylobate top at y = 0, column axes at z = 0).
 export const BANK = {
@@ -17,6 +17,7 @@ export const BANK = {
   stepH: 0.36, stepD: 0.7, steps: 5, styFront: 1.6,
   crackRect: [-9.6, -2.3, 19.2, 16.4],
 };
+export const HEAP = { z: 0.95, r: 0.62 };   // the savers' coins, on the stylobate in front of the door
 export const stepTop = (i) => -BANK.stepH * i;                 // i = 0 (stylobate) .. 5
 export const stepFront = (i) => BANK.styFront + BANK.stepD * i;
 
@@ -158,7 +159,7 @@ function crackify(mat, U) {
       .replace('#include <map_fragment>', `#include <map_fragment>
         {
           vec2 cuv = (vBankPos.xy - uCrackRect.xy) / uCrackRect.zw;
-          if (cuv.x > 0.0 && cuv.x < 1.0 && cuv.y > 0.0 && cuv.y < 1.0 && vBankNrm.z > -0.3) {
+          if (cuv.x > 0.0 && cuv.x < 1.0 && cuv.y > 0.0 && cuv.y < 1.0 && vBankNrm.z > 0.45) {
             vec4 cs = texture2D(uCrackTex, cuv);
             float arr = cs.r / max(cs.g, 0.004);
             crackM = cs.g * (1.0 - smoothstep(uCrack - 0.02, uCrack, arr));
@@ -370,9 +371,9 @@ export async function bankStage(film) {
   const green = new THREE.SpotLight(0x8dffb0, 0, 80, 0.35, 0.7, 1.2);
   green.position.set(0, 40, 2); green.target.position.set(0, 8, -2);
   scene.add(green, green.target);
-  const coinKey = new THREE.SpotLight(0xf4f1ea, 0, 20, 0.24, 0.55, 1.2);
-  coinKey.position.set(-2.5, 2.5, 8.5);
-  coinKey.target.position.set(0.2, -1.8, 4.8);
+  const coinKey = new THREE.SpotLight(0xf6f2ea, 0, 20, 0.42, 0.6, 1.2);
+  coinKey.position.set(-1.4, 3.4, 3.8);
+  coinKey.target.position.set(0, 0, HEAP.z);
   coinKey.castShadow = true;
   coinKey.shadow.mapSize.set(1024, 1024);
   coinKey.shadow.bias = -0.0004;
@@ -399,24 +400,71 @@ export async function bankStage(film) {
   // The bailout: notes pouring from the sky into the bank.
   const noteTex = await bridgeNote();
   const torrent = new NoteCloud(noteTex, 2600, { emissive: 0.1 });
+  readableBothSides(torrent.material, 'torrent');
   scene.add(torrent);
 
-  // The savers' coins on the bottom step.
-  const faces = [await coinFace('denarius', { size: 512 }), await coinFace('stater', { size: 512 }), await coinFace('eagle', { size: 512 })];
-  const metals = ['silver', 'bronze', 'silver', 'tin', 'bronze', 'silver', 'bronze', 'silver', 'tin', 'silver', 'bronze'];
-  const coins = [];
-  const Rc = rng(116);
-  for (let i = 0; i < metals.length; i++) {
-    const r = 0.17 + Rc() * 0.06;
-    const c = new Coin({ radius: r, thickness: r * 0.16, face: faces[i % 3], metal: metals[i], seed: 30 + i });
-    c.userData = { x: -1.2 + i * 0.36 + (Rc() - 0.5) * 0.2, z: stepFront(BANK.steps) - 0.12 - Rc() * 0.45, spin: Rc() * 6.28, delay: Rc(), r };
-    bank.add(c);
-    coins.push(c);
+  // The savers' coins: a small heap on the stylobate at the bank's door, and the crack that swallows it.
+  const heapFaces = [await coinFace('denarius', { size: 512 }), await coinFace('stater', { size: 512 })];
+  const coinGeo = new THREE.CylinderGeometry(1, 1, 1, 48);
+  // The coins reflect a neutral studio of their own, so silver reads as silver under the alarm-red scene.
+  const coinEnv = studioEnv(film.renderer, [
+    { pos: [0, 6, 2], size: [6, 2], color: [1, 1, 1], intensity: 3 },
+    { pos: [-5, 2, 3], size: [1, 4], color: [1, 0.96, 0.9], intensity: 2.5 },
+    { pos: [5, 1, -2], size: [1, 4], color: [0.92, 0.95, 1], intensity: 2 },
+  ], { top: [0.4, 0.4, 0.4], horizon: [0.14, 0.13, 0.12], bottom: [0.02, 0.02, 0.02] });
+  const mkCoins = (metal, face, count) => {
+    const m = METALS[metal];
+    const col = new THREE.Color().setRGB(...m.color);
+    const faceMat = new THREE.MeshPhysicalMaterial({ color: col, metalness: 1, roughness: m.roughness + 0.05, map: face.color, normalMap: face.normal, normalScale: new THREE.Vector2(1.2, 1.2), envMap: coinEnv });
+    const edgeMat = new THREE.MeshPhysicalMaterial({ color: col, metalness: 1, roughness: m.roughness + 0.12, envMap: coinEnv });
+    const im = new THREE.InstancedMesh(coinGeo, [edgeMat, faceMat, faceMat], count);
+    im.castShadow = true; im.receiveShadow = true;
+    im.frustumCulled = false;
+    bank.add(im);
+    return im;
+  };
+  const Rh = rng(1160);
+  const heap = [];
+  const layers = [26, 20, 15, 10, 6, 3];
+  layers.forEach((n, L) => {
+    const R = HEAP.r * (1 - L * 0.16);
+    for (let k = 0; k < n; k++) {
+      const u = (k + 0.5) / n;
+      const rr = Math.sqrt(u) * R * (0.85 + 0.15 * Rh());
+      const ang = k * 2.39996 + L * 0.7 + Rh() * 0.4;
+      heap.push({
+        x: Math.cos(ang) * rr, z: HEAP.z + Math.sin(ang) * rr * 0.9, y: 0.012 + L * 0.024 + Rh() * 0.006, L,
+        rad: 0.13 + Rh() * 0.035, tx: (Rh() - 0.5) * (0.25 + 0.08 * L), tz: (Rh() - 0.5) * (0.25 + 0.08 * L), spin: Rh() * 6.28,
+        silver: Rh() < 0.6, j: Rh(),
+      });
+    }
+  });
+  const nSilver = heap.filter((c) => c.silver).length;
+  const silverCoins = mkCoins('silver', heapFaces[0], nSilver);
+  const bronzeCoins = mkCoins('bronze', heapFaces[1], heap.length - nSilver);
+  // The gap: a jagged black lens across the stone under the heap that opens on "savers".
+  const gapShape = new THREE.Shape();
+  const Rg = rng(77);
+  const GN = 26, GL = 0.95;
+  const edgeTop = [], edgeBot = [];
+  for (let i = 0; i <= GN; i++) {
+    const x = -GL + (2 * GL * i) / GN;
+    const w = 0.27 * Math.max(0, 1 - (x / GL) ** 2) ** 0.8;
+    edgeTop.push([x, w + (Rg() - 0.5) * 0.06 * (w > 0.02 ? 1 : 0)]);
+    edgeBot.push([x, -w + (Rg() - 0.5) * 0.06 * (w > 0.02 ? 1 : 0)]);
   }
+  gapShape.moveTo(edgeTop[0][0], 0);
+  for (const [x, y] of edgeTop) gapShape.lineTo(x, y);
+  for (let i = edgeBot.length - 1; i >= 0; i--) gapShape.lineTo(edgeBot[i][0], edgeBot[i][1]);
+  const gap = new THREE.Mesh(new THREE.ShapeGeometry(gapShape), new THREE.MeshBasicMaterial({ color: 0x000000 }));
+  gap.rotation.x = -Math.PI / 2;
+  gap.position.set(0, 0.003, HEAP.z);
+  bank.add(gap);
 
   const dcol = new THREE.Color();
+  const dm = new THREE.Object3D();
   const S = {
-    scene, bank, columns, flood, redL, redR, rimRed, green, coinKey, vaultLight, vaultMat, amb, sky, dust, torrent, coins, U,
+    scene, bank, columns, flood, redL, redR, rimRed, green, coinKey, vaultLight, vaultMat, amb, sky, dust, torrent, gap, silverCoins, bronzeCoins, U,
     fx: { bloom: 0.45, threshold: 1.1, bloomRadius: 0.35, grain: 0.055, vignette: 0.55, tint: [1.04, 0.97, 0.95], contrast: 1.08 },
     HITS,
     // Crack growth: each hit of the line snaps the cracks further.
@@ -462,34 +510,36 @@ export async function bankStage(film) {
         d.scale.setScalar(scale * (0.85 + 0.3 * h3));
       });
     },
-    // Coins: rest on the step, then slide off the edge (tStart staggered) and fall into the dark.
-    coinsAt(t, tStart) {
-      const edge = stepFront(BANK.steps), top = stepTop(BANK.steps);
-      for (let i = 0; i < coins.length; i++) {
-        const c = coins[i], q = c.userData;
-        c.visible = true;
-        const ts = tStart + q.delay * 0.62;
-        const a = Math.max(0, t - ts);
-        const acc = 7 + 5 * hash1(i + 9);
-        const dEdge = edge - q.z;
-        const tEdge = Math.sqrt((2 * dEdge) / acc);
-        let x = q.x, y = top + q.r * 0.16 / 2 + 0.002, z = q.z, rx = -Math.PI / 2, rz = q.spin, ry = 0;
-        if (a <= tEdge) {
-          z = q.z + 0.5 * acc * a * a;
-          x = q.x + a * a * (hash1(i + 3) - 0.5) * 0.8;
-          rz = q.spin + a * a * 3 * (hash1(i + 5) - 0.5);
-        } else {
-          const b = a - tEdge, v = acc * tEdge;
-          z = edge + v * b;
-          x = q.x + tEdge * tEdge * (hash1(i + 3) - 0.5) * 0.8 + b * (hash1(i + 3) - 0.5) * 0.6;
-          y = top + 0.03 - 4.9 * b * b * 1.6;
-          rx = -Math.PI / 2 + b * (5 + 6 * hash1(i + 7));
-          rz = q.spin + b * 4;
-          ry = b * 3 * (hash1(i + 8) - 0.5);
+    // The heap drains: the gap opens at tOpen, coins nearest the crack go first, sliding in and dropping into the dark.
+    heapAt(t, tOpen) {
+      const open = easeOut(clamp((t - tOpen) / 0.22), 2);
+      gap.visible = open > 0.001;
+      gap.scale.set(1, Math.max(0.001, open), 1);
+      let si = 0, bi = 0;
+      for (const c of heap) {
+        const ts = tOpen + 0.06 + Math.abs(c.z - HEAP.z) * 0.6 + c.L * 0.035 + Math.abs(c.x) * 0.15 + c.j * 0.06;
+        const a = t - ts;
+        let x = c.x, y = c.y, z = c.z, rx = c.tx, rz = c.tz, ry = c.spin, s = c.rad;
+        if (a > 0) {
+          const slide = easeIn(clamp(a / 0.2), 2);
+          z = lerp(c.z, HEAP.z, slide);
+          y = lerp(c.y, 0.012, slide);
+          rx = c.tx + slide * (c.j - 0.5) * 1.2;
+          const b = Math.max(0, a - 0.16);
+          y -= 4.9 * 1.8 * b * b;
+          rx += b * (6 + 5 * c.j);
+          rz = c.tz + b * 4 * (c.j - 0.3);
+          if (y < -1.4) s = 0.0001;
         }
-        c.position.set(x, y, z);
-        c.rotation.set(rx, ry, rz);
+        dm.position.set(x, y, z);
+        dm.rotation.set(rx, ry, rz);
+        dm.scale.set(s, 0.022, s);
+        dm.updateMatrix();
+        if (c.silver) silverCoins.setMatrixAt(si++, dm.matrix); else bronzeCoins.setMatrixAt(bi++, dm.matrix);
       }
+      silverCoins.instanceMatrix.needsUpdate = true;
+      bronzeCoins.instanceMatrix.needsUpdate = true;
+      silverCoins.visible = bronzeCoins.visible = true;
     },
     update(ctx) {
       const t = ctx.t;
@@ -513,7 +563,8 @@ export async function bankStage(film) {
       sky.material.uniforms.uGain.value = 1;
       scene.fog.density = 0.012;
       torrent.visible = false;
-      for (const c of coins) c.visible = false;
+      silverCoins.visible = bronzeCoins.visible = false;
+      gap.visible = false;
       // Dust: each hit shakes a veil of dust from the cornice and the cracks.
       const pa = dust.geometry.attributes.position.array, ca = dust.geometry.attributes.color.array;
       for (let h = 0; h < HITS.length; h++) {

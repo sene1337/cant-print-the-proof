@@ -1,7 +1,7 @@
 // The drop (109.73-112.23): the music stops. One note falls through a shaft of light and lands on dark stone.
 import * as THREE from 'three';
 import { normalFromHeight } from '../tex.js';
-import { bridgeNote } from '../props/bridge-note.js';
+import { bridgeNote, readableBothSides } from '../props/bridge-note.js';
 import { clamp, hash1, lerp, rng, smooth } from '../util.js';
 
 export const DROP = { t0: 109.73, tLand: 111.93, top: 9.5, beamH: 26, beamR: 2.75 };
@@ -100,10 +100,6 @@ export async function dropStage(film) {
   const lamp = new THREE.SpotLight(0xfff1dc, 34, 60, 0.108, 0.45, 0.7);
   lamp.position.set(0, DROP.beamH, 0);
   lamp.target.position.set(0, 0, 0);
-  lamp.castShadow = true;
-  lamp.shadow.mapSize.set(1024, 1024);
-  lamp.shadow.bias = -0.0004;
-  lamp.shadow.radius = 3;
   scene.add(lamp, lamp.target);
   const amb = new THREE.AmbientLight(0x1a1712, 0.35);
   scene.add(amb);
@@ -140,17 +136,28 @@ export async function dropStage(film) {
     p.setZ(i, 0.1 * (x / 1.175) ** 2 + 0.03 * Math.sin(y * 2.5 + x));
   }
   geo.computeVertexNormals();
-  const noteMat = new THREE.MeshStandardMaterial({ map: tex, side: THREE.DoubleSide, roughness: 0.8, metalness: 0 });
+  const noteMat = readableBothSides(new THREE.MeshStandardMaterial({ map: tex, side: THREE.DoubleSide, roughness: 0.8, metalness: 0 }), 'drop');
   const note = new THREE.Mesh(geo, noteMat);
-  note.castShadow = true;
   note.rotation.x = -Math.PI / 2;
   const noteRoll = new THREE.Group(); noteRoll.add(note);
   const noteYaw = new THREE.Group(); noteYaw.add(noteRoll);
   noteYaw.scale.setScalar(0.8);
   scene.add(noteYaw);
 
+  // Soft contact shadow under the note (a hard shadow read as a black wedge).
+  const blobTex = (() => {
+    const c = canvas(128, 128), g = c.getContext('2d');
+    const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+    gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(0.55, 'rgba(0,0,0,0.55)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+    return new THREE.CanvasTexture(c);
+  })();
+  const blob = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false, opacity: 0 }));
+  blob.rotation.x = -Math.PI / 2;
+  scene.add(blob);
+
   const S = {
-    scene, lamp, beam, dust, floor, note, noteYaw, noteRoll,
+    scene, lamp, beam, dust, floor, note, noteYaw, noteRoll, blob,
     fx: { bloom: 0.35, threshold: 1.15, bloomRadius: 0.4, grain: 0.06, vignette: 0.6, tint: [1.02, 1.0, 0.96], sat: 0.85, shake: 0.0015 },
     notePose,
     update(ctx) {
@@ -159,6 +166,11 @@ export async function dropStage(film) {
       noteYaw.position.set(q.x, q.y, q.z);
       noteYaw.rotation.set(0, q.yaw, 0);
       noteRoll.rotation.set(q.pitch, 0, q.roll);
+      const near = clamp(1 - q.y / 2.2);
+      blob.position.set(q.x, 0.004, q.z);
+      blob.rotation.z = -q.yaw;
+      blob.scale.set(2.2 * (1.25 - 0.35 * near), 1.1 * (1.25 - 0.35 * near), 1);
+      blob.material.opacity = 0.55 * near * near;
       // Dust: slow orbits inside the cone.
       const a = dust.geometry.attributes.position.array;
       for (let i = 0; i < ND; i++) {
