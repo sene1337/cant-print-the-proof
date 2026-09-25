@@ -67,7 +67,7 @@ export function shots(S, T) {
   // 5. "Then in China they printed me, the first fiat to fall": the Ming note on a lacquer table.
   //    A jade seal slams down on "printed" and lifts off a fresh red seal.
   const tPrinted = W('printed', 57);
-  S(W('then', 56.5), 'verse2-ming', shaken(orbitCam({ target: [0, 0, 0.12], dist: [3.4, 2.8], az: [-16, -7], el: [56, 63], fov: 32 }), tPrinted, 0.01),
+  S(W('then', 56.5), 'verse2-ming', shaken(orbitCam({ target: [0, 0, 0.3], dist: [3.4, 2.45], az: [-16, -7], el: [56, 64], fov: 32, ease: easeInOut }), tPrinted, 0.016),
     (s, c) => { s.sealAt(c.t, tPrinted); });
 
   // 6. "paper by decree, and it didn't last at all": the note burns in from its edges and is gone on "all".
@@ -128,8 +128,9 @@ export function shots(S, T) {
   // 13. "Seventy-one, Sunday night on TV": a dark 1970s living room; the set flicks on to a window full of gold light.
   //     The wall calendar reads SUNDAY 15 AUGUST 1971.
   const t71 = W('seventy-one', 73);
-  S(t71, 'verse2-tv', moveCam({ from: [-0.8, 1.32, 4.5], to: [-0.6, 1.24, 3.7], look: [0.28, 1.15, 0], fov: 34 }),
-    (s, c) => { s.tvAt(c.t, { on: clamp((c.t - t71 - 0.04) / 0.34) }); });
+  //     Opens close on the calendar as the tube flicks on and lights it, then swings to the set.
+  S(t71, 'verse2-tv', moveCam({ from: [2.05, 1.76, 0.8], to: [0.3, 1.36, 3.0], look: [1.52, 1.72, -0.88], look2: [0.12, 1.14, 0], fov: 34, ease: easeInOut }),
+    (s, c) => { s.tvAt(c.t, { on: clamp((c.t - t71 - 0.04) / 0.34) }); s.calLamp.intensity = 2.2; });
 
   // 14. "Nixon closed the window": close on the screen. A shutter slams over the window on "closed";
   //     the gold dies and the picture and the room go cold blue by "window".
@@ -137,8 +138,9 @@ export function shots(S, T) {
   S(B(75.067), 'verse2-tv', moveCam({ from: [0.4, 1.14, 2.45], to: [0.12, 1.07, 1.8], look: [SCREEN.x, SCREEN.y, SCREEN.z], fov: 32 }),
     (s, c) => {
       s.tvAt(c.t, {
-        shut: easeIn(clamp((c.t - tClosed + 0.06) / 0.16), 2),
-        cold: clamp((c.t - tClosed - 0.12) / (tWindow - tClosed + 0.05)),
+        shut: easeIn(clamp((c.t - tClosed + 0.08) / 0.2), 2),
+        leak: 1 - clamp((c.t - tClosed - 0.12) / 0.25),
+        cold: clamp((c.t - tClosed - 0.2) / (tWindow - tClosed + 0.05)),
       });
     });
 
@@ -175,7 +177,7 @@ export function shots(S, T) {
 
   // 18. "like it's rent": closer. Snip on the beat, snip on "rent"; the slivers fall; the shears hang open. Fade out
   //     for chorus 2.
-  S(W('like', 81.7), 'verse2-fiat', moveCam({ from: [CUT_X + 1.55, TABLE_Y + 0.6, 1.35], to: [CUT_X + 1.3, TABLE_Y + 0.52, 1.12], look: [CUT_X - 0.05, TABLE_Y + 0.02, 0.05], fov: 34 }),
+  S(W('like', 81.7), 'verse2-fiat', moveCam({ from: [CUT_X + 2.05, TABLE_Y + 0.78, 0.8], to: [CUT_X + 1.8, TABLE_Y + 0.7, 0.62], look: [CUT_X - 0.1, TABLE_Y + 0.04, -0.3], fov: 34 }),
     (s, c) => { trimLight(s); s.rimG.intensity = 0.6; s.trimAt(c.t, cuts, tAnd); },
     { fadeOut: 0.35, bloom: 0.35 });
 }

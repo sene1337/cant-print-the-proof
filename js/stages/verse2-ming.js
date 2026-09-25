@@ -8,7 +8,7 @@ import { Dust } from '../props/dust.js';
 import { clamp, lerp, hash1, rng, noise1, easeIn, easeOut } from '../util.js';
 import {
   noiseField, burnUniforms, patchBurn, burnFieldJS, BURN_FIELD_GLSL, patch, clampHot,
-  Flakes, flakeMaterial, SoftPoints, pointScale, canvas2d, canvasTex,
+  Flakes, flakeMaterial, SoftPoints, pointScale, canvas2d, canvasTex, sampleField,
 } from '../props/verse2-kit.js';
 
 // The photo has a white museum margin; crop to the paper.
@@ -158,40 +158,48 @@ export async function mingStage(film) {
   note.receiveShadow = true;
   scene.add(note);
 
-  // The seal: a square jade base under a turned knob, red paste on its face.
+  // The seal: one heavy block of veined dark-green jade, a chamfered column under a pyramid cap, red paste on its face.
   const seal = new THREE.Group();
-  // cloudy jade: a noise-driven colour map
   const jadeTex = (() => {
-    const F = noiseField(128, 47, 4);
-    const [c, g] = canvas2d(128, 128);
-    const img = g.createImageData(128, 128);
-    const a = [0.42, 0.6, 0.47], b = [0.82, 0.9, 0.8];
-    for (let i = 0; i < 128 * 128; i++) {
-      const v = Math.pow(F.data[i], 1.6);
-      for (let k = 0; k < 3; k++) img.data[i * 4 + k] = Math.round(255 * (a[k] + (b[k] - a[k]) * v));
-      img.data[i * 4 + 3] = 255;
+    const F = noiseField(256, 47, 5);
+    const W = 256, H = 512;
+    const [c, g] = canvas2d(W, H);
+    const img = g.createImageData(W, H);
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const n = sampleField(F, x / W, y / H);
+        const vein = Math.pow(Math.abs(Math.sin((x * 0.008 + y * 0.005 + n * 2.2) * Math.PI)), 60);
+        const vein2 = Math.pow(Math.abs(Math.sin((x * 0.003 - y * 0.009 + n * 1.6) * Math.PI)), 90);
+        const m = n * n;
+        const base = [0.06 + 0.1 * m, 0.19 + 0.2 * m, 0.12 + 0.12 * m];
+        const v = Math.min(1, vein * 0.4 + vein2 * 0.3);
+        const vc = [0.6, 0.8, 0.66];
+        const i = (y * W + x) * 4;
+        for (let k = 0; k < 3; k++) img.data[i + k] = Math.round(255 * (base[k] + (vc[k] - base[k]) * v));
+        img.data[i + 3] = 255;
+      }
     }
     g.putImageData(img, 0, 0);
     return canvasTex(c);
   })();
-  const jade = clampHot(new THREE.MeshPhysicalMaterial({ color: 0xffffff, map: jadeTex, roughness: 0.2, clearcoat: 1, clearcoatRoughness: 0.08 }), 4);
-  const wood = clampHot(new THREE.MeshPhysicalMaterial({ color: 0x3a0d08, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.12 }), 4);
-  const gilt = clampHot(new THREE.MeshPhysicalMaterial({ color: new THREE.Color().setRGB(1, 0.72, 0.3), metalness: 1, roughness: 0.25 }), 4);
-  const base = new THREE.Mesh(new RoundedBoxGeometry(SEAL_SIZE * 1.04, 0.2, SEAL_SIZE * 1.04, 4, 0.025), jade);
-  base.position.y = 0.1;
-  base.castShadow = true;
-  seal.add(base);
-  const k = SEAL_SIZE / 0.42;
-  const prof = [[0.14, 0], [0.14, 0.03], [0.075, 0.07], [0.055, 0.2], [0.08, 0.3], [0.115, 0.4], [0.11, 0.48], [0.07, 0.54], [0.03, 0.575], [0, 0.585]]
-    .map(([r, y]) => new THREE.Vector2(r * k, y * k));
-  const knob = new THREE.Mesh(new THREE.LatheGeometry(prof, 48), wood);
-  knob.position.y = 0.2;
-  knob.castShadow = true;
+  const jade = clampHot(new THREE.MeshPhysicalMaterial({
+    color: 0xffffff, map: jadeTex, roughness: 0.32, clearcoat: 1, clearcoatRoughness: 0.08,
+    sheen: 0.5, sheenColor: new THREE.Color(0.55, 0.85, 0.65), sheenRoughness: 0.45,
+  }), 3);
+  const column = new THREE.Mesh(new RoundedBoxGeometry(SEAL_SIZE * 1.04, 0.78, SEAL_SIZE * 1.04, 5, 0.035), jade);
+  column.position.y = 0.39;
+  column.castShadow = true;
+  seal.add(column);
+  const cr = SEAL_SIZE * 0.52 * Math.SQRT2;
+  const cap = new THREE.Mesh(new THREE.CylinderGeometry(cr * 0.32, cr, 0.2, 4, 1), jade);
+  cap.rotation.y = Math.PI / 4;
+  cap.position.y = 0.88;
+  cap.castShadow = true;
+  seal.add(cap);
+  const knob = new THREE.Mesh(new THREE.SphereGeometry(SEAL_SIZE * 0.13, 24, 16), jade);
+  knob.scale.set(1, 0.8, 1);
+  knob.position.y = 1.0;
   seal.add(knob);
-  const band = new THREE.Mesh(new THREE.TorusGeometry(0.075 * k, 0.012 * k, 12, 48), gilt);
-  band.rotation.x = Math.PI / 2;
-  band.position.y = 0.2 + 0.07 * k;
-  seal.add(band);
   const [cs, gs] = canvas2d(256, 256);
   drawSeal(gs, 128, 128, 250, { mirror: true });
   const paste = new THREE.Mesh(new THREE.PlaneGeometry(SEAL_SIZE, SEAL_SIZE), new THREE.MeshStandardMaterial({ map: canvasTex(cs), transparent: true, roughness: 0.6 }));

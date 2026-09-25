@@ -5,8 +5,8 @@ import { studioEnv } from '../film.js';
 import { Coin } from '../props/coin.js';
 import { Dust } from '../props/dust.js';
 import { coinFace, edgeText } from '../tex.js';
-import { clamp, hash1, lerp, smooth, easeOut, easeIn, easeInOut } from '../util.js';
-import { noiseField, tinUniforms, patchTin, clampHot, Pieces } from '../props/verse2-kit.js';
+import { clamp, hash1, rng, lerp, smooth, easeOut, easeIn, easeInOut } from '../util.js';
+import { noiseField, tinUniforms, patchTin, clampHot, Pieces, canvas2d, canvasTex } from '../props/verse2-kit.js';
 
 const DEG = Math.PI / 180;
 const X_AXIS = new THREE.Vector3(1, 0, 0), Y_AXIS = new THREE.Vector3(0, 1, 0), Z_AXIS = new THREE.Vector3(0, 0, 1);
@@ -93,38 +93,72 @@ function jawShape(sign) {
   return s;
 }
 
+// Brushed-steel roughness streaks along the blade (x).
+function brushed() {
+  const [c, g] = canvas2d(512, 128);
+  const R = rng(77);
+  g.fillStyle = '#c8c8c8'; g.fillRect(0, 0, 512, 128);
+  for (let i = 0; i < 900; i++) {
+    const y = R() * 128, v = Math.round(150 + R() * 105);
+    g.fillStyle = `rgb(${v},${v},${v})`;
+    g.fillRect(R() * 512 - 100, y, 60 + R() * 400, R() < 0.8 ? 1 : 2);
+  }
+  const t = canvasTex(c, { srgb: false, repeat: true });
+  t.repeat.set(1.5, 4);
+  return t;
+}
+
+// Tailor's shears: brushed steel blades with polished ground edges and bevels, a domed slotted pivot screw,
+// and black-japanned finger bows. Pivot at the origin, blades toward +x, cutting line at y = 0 between the blades.
 export function buildShears() {
-  const steel = clampHot(new THREE.MeshPhysicalMaterial({ color: 0x8d9298, metalness: 1, roughness: 0.3 }), 5);
-  const edge = clampHot(new THREE.MeshPhysicalMaterial({ color: 0xe9edf2, metalness: 1, roughness: 0.18 }), 5);
-  const iron = clampHot(new THREE.MeshPhysicalMaterial({ color: 0x23201e, metalness: 0.85, roughness: 0.45 }), 5);
-  const brass = clampHot(new THREE.MeshPhysicalMaterial({ color: new THREE.Color().setRGB(0.85, 0.62, 0.3), metalness: 1, roughness: 0.3 }), 5);
-  const T = 0.075;
+  const rough = brushed();
+  // satin steel: mostly metal, with enough diffuse that the flat of the blade takes the key light
+  const steel = clampHot(new THREE.MeshPhysicalMaterial({ color: 0xe4e8ec, metalness: 0.78, roughness: 0.36, roughnessMap: rough, anisotropy: 0.75, clearcoat: 0.35, clearcoatRoughness: 0.12 }), 3.5);
+  const polished = clampHot(new THREE.MeshPhysicalMaterial({ color: 0xf6f8fa, metalness: 1, roughness: 0.06 }), 3.5);
+  const japan = clampHot(new THREE.MeshPhysicalMaterial({ color: 0x0b0a0a, metalness: 0.3, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.08 }), 4);
+  const dark = new THREE.MeshStandardMaterial({ color: 0x0a0a0a, roughness: 0.6 });
+  const T = 0.075, B = 0.02;
   const G = new THREE.Group();
   const pieces = [];
   for (const sign of [1, -1]) {
     const piece = new THREE.Group();
-    const jaw = new THREE.Mesh(new THREE.ExtrudeGeometry(jawShape(sign), { depth: T, bevelEnabled: true, bevelThickness: 0.012, bevelSize: 0.012, bevelSegments: 2, curveSegments: 24 }), steel);
-    jaw.position.z = sign > 0 ? 0.004 : -T - 0.004;
+    const jaw = new THREE.Mesh(new THREE.ExtrudeGeometry(jawShape(sign), { depth: T - 2 * B, bevelEnabled: true, bevelThickness: B, bevelSize: 0.018, bevelSegments: 3, curveSegments: 32 }), steel);
+    jaw.position.z = sign > 0 ? 0.004 + B : -0.004 - T + B;
     jaw.castShadow = true;
     piece.add(jaw);
-    // bright ground bevel along the cutting edge
-    const bev = new THREE.Mesh(new THREE.BoxGeometry(1.95, 0.035, 0.02), edge);
-    bev.position.set(0.68, 0.02 * sign, sign > 0 ? 0.004 : -0.004);
-    piece.add(bev);
-    // handle: an iron shank that crosses at the pivot and runs back
-    const pts = [[-0.2, 0.0], [-0.9, -0.16], [-1.9, -0.36], [-2.9, -0.5]].map(([x, y]) => new THREE.Vector3(x, y * sign, (sign > 0 ? 1 : -1) * T * 0.5));
-    const shank = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 40, 0.085, 12, false), iron);
+    // polished ground edge along the cutting edge, on the outer face, where it catches the light
+    const zOut = sign > 0 ? 0.004 + T + 0.0015 : -0.004 - T - 0.0015;
+    const ground = new THREE.Mesh(new THREE.BoxGeometry(1.86, 0.055, 0.003), polished);
+    ground.position.set(0.7, 0.03 * sign, zOut);
+    piece.add(ground);
+    // japanned shank running back from the pivot boss to a finger bow
+    const zMid = sign * (0.004 + T / 2);
+    const pts = [[-0.24, -0.03], [-0.8, -0.16], [-1.45, -0.3], [-1.8, -0.38]].map(([x, y]) => new THREE.Vector3(x, y * sign, zMid));
+    const shank = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 32, 0.07, 12, false), japan);
     shank.castShadow = true;
     piece.add(shank);
-    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.1, 16, 12), iron);
-    cap.position.copy(pts[3]);
-    piece.add(cap);
+    const bow = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.06, 14, 48), japan);
+    bow.position.set(sign > 0 ? -2.06 : -2.16, (sign > 0 ? -0.5 : -0.56) * sign, zMid);
+    bow.scale.set(sign > 0 ? 1 : 1.4, 1, 1);
+    bow.castShadow = true;
+    piece.add(bow);
     G.add(piece);
     pieces.push(piece);
   }
-  const bolt = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, T * 2 + 0.08, 24), brass);
-  bolt.rotation.x = Math.PI / 2;
-  G.add(bolt);
+  // pivot: a domed, slotted screw head on one side and a hex nut on the other
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.15, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2), polished);
+  head.rotation.x = Math.PI / 2;
+  head.scale.set(1, 0.45, 1);
+  head.position.z = 0.004 + T + 0.004;
+  G.add(head);
+  const slot = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.028, 0.03), dark);
+  slot.position.z = 0.004 + T + 0.066;
+  slot.rotation.z = 0.5;
+  G.add(slot);
+  const nut = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.06, 6), steel);
+  nut.rotation.x = Math.PI / 2;
+  nut.position.z = -(0.004 + T + 0.03);
+  G.add(nut);
   return { group: G, upper: pieces[0], lower: pieces[1] };
 }
 

@@ -50,21 +50,23 @@ function grille() {
   return canvasTex(c);
 }
 
-// Page-a-day wall calendar.
+// Page-a-day wall calendar, lettered big enough to read on a phone.
 function calendar() {
   const w = 512, h = 680;
   const [c, g] = canvas2d(w, h);
-  g.fillStyle = '#eee6d4'; g.fillRect(0, 0, w, h);
-  g.fillStyle = '#a3261c'; g.fillRect(0, 0, w, 150);
-  g.fillStyle = '#f6efe2'; g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.font = '800 64px "Figtree"';
-  g.fillText('AUGUST 1971', w / 2, 80);
+  g.fillStyle = '#efe7d6'; g.fillRect(0, 0, w, h);
+  g.fillStyle = '#a3261c'; g.fillRect(0, 0, w, 168);
+  g.fillStyle = '#f7f0e3'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.font = '800 58px "Figtree"';
+  g.fillText('AUGUST', w / 2, 58);
+  g.font = '800 72px "Figtree"';
+  g.fillText('1971', w / 2, 124);
   g.fillStyle = '#1c1916';
-  g.font = '900 330px "Playfair Display"';
-  g.fillText('15', w / 2, 360);
+  g.font = '900 300px "Playfair Display"';
+  g.fillText('15', w / 2, 368);
   g.fillStyle = '#a3261c';
-  g.font = '800 70px "Figtree"';
-  g.fillText('SUNDAY', w / 2, 580);
+  g.font = '800 104px "Figtree"';
+  g.fillText('SUNDAY', w / 2, 590);
   g.strokeStyle = 'rgba(0,0,0,0.25)'; g.lineWidth = 3;
   for (let x = 30; x < w; x += 38) { g.beginPath(); g.arc(x, 8, 6, 0, Math.PI * 2); g.stroke(); }
   return canvasTex(c);
@@ -72,37 +74,62 @@ function calendar() {
 
 function screenMaterial() {
   return new THREE.ShaderMaterial({
-    uniforms: { uTime: { value: 0 }, uOn: { value: 1 }, uShut: { value: 0 }, uCold: { value: 0 }, uGain: { value: 1 } },
+    uniforms: { uTime: { value: 0 }, uOn: { value: 1 }, uShut: { value: 0 }, uCold: { value: 0 }, uGain: { value: 1 }, uLeak: { value: 1 } },
     vertexShader: /* glsl */ `
       varying vec2 vUv;
       void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
     fragmentShader: /* glsl */ `
       varying vec2 vUv;
-      uniform float uTime, uOn, uShut, uCold, uGain;
+      uniform float uTime, uOn, uShut, uCold, uGain, uLeak;
       float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
       float rrect(vec2 p, vec2 b, float r) { vec2 q = abs(p) - b + r; return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r; }
+      float inBand(float x, float a, float b) { return step(a, x) * step(x, b); }
       vec3 picture(vec2 uv) {
-        vec3 wall = vec3(0.06, 0.04, 0.025);
-        vec2 w0 = vec2(0.31, 0.13), w1 = vec2(0.69, 0.89);
+        // a dark room wall with faint wallpaper stripes
+        vec3 col = vec3(0.065, 0.042, 0.028) * (0.88 + 0.12 * step(0.5, fract(uv.x * 36.0)));
+        vec2 w0 = vec2(0.34, 0.17), w1 = vec2(0.66, 0.85);
         vec2 wc = 0.5 * (w0 + w1), wh = 0.5 * (w1 - w0);
         vec2 d = (uv - wc) / wh;
-        float inside = step(abs(d.x), 1.0) * step(abs(d.y), 1.0);
+        float inGlass = step(abs(d.x), 1.0) * step(abs(d.y), 1.0);
+        float inFrame = step(abs(d.x), 1.13) * step(abs(d.y), 1.09) * (1.0 - inGlass);
+        // gold light behind the glass, hottest in the middle
         float r = length(d * vec2(1.0, 0.75));
         vec3 gold = mix(vec3(1.0, 0.5, 0.1), vec3(1.0, 0.82, 0.45), smoothstep(1.0, 0.0, r)) * 1.3;
-        float mull = max(step(abs(uv.x - wc.x), 0.012), step(abs(uv.y - (wc.y + 0.1)), 0.012));
-        float shutEdge = 1.0 - 2.0 * uShut;
-        float shut = step(shutEdge, d.y);
-        float slat = 0.55 + 0.45 * step(0.5, fract((d.y - shutEdge) * 6.0 + 0.25));
-        vec3 shutCol = vec3(0.2, 0.15, 0.11) * slat;
-        vec3 win = mix(gold, vec3(0.07, 0.05, 0.03), mull);
-        win = mix(win, shutCol, shut);
-        float frame = step(abs(d.x), 1.09) * step(abs(d.y), 1.06) * (1.0 - inside);
-        float openAmt = 1.0 - uShut;
-        float spill = exp(-max(0.0, max(abs(d.x) - 1.0, abs(d.y) - 1.0)) * 4.0) * 0.4 * openAmt;
-        vec3 col = wall + vec3(1.0, 0.58, 0.2) * spill;
-        col = mix(col, vec3(0.14, 0.09, 0.05), frame);
-        col = mix(col, win, inside);
-        vec3 cold = vec3(0.1, 0.2, 0.42) * (0.75 + 0.25 * uv.y);
+        float mull = max(step(abs(uv.x - wc.x), 0.009), step(abs(uv.y - (wc.y + 0.1)), 0.009));
+        vec3 glass = mix(gold, vec3(0.1, 0.06, 0.035), mull);
+        // two louvered shutters swing in from the sides and meet in the middle
+        float sh = uShut;
+        float px = abs(d.x);
+        float cover = step(1.0 - sh, px) * inGlass;
+        float lx = clamp((px - (1.0 - sh)) / max(sh, 0.001), 0.0, 1.0);   // 0 at the leading edge .. 1 at the hinge
+        float sy = fract((d.y + 1.0) * 8.0);
+        float louver = mix(0.44, 0.16, smoothstep(0.05, 0.82, sy));
+        float gapL = step(0.84, sy);
+        float stile = max(step(0.9, lx), step(lx, 0.1)) + step(0.94, abs(d.y));
+        stile = clamp(stile, 0.0, 1.0);
+        vec3 wood = vec3(0.46, 0.29, 0.15);
+        vec3 panel = wood * mix(louver * (1.0 - 0.75 * gapL), 0.4, stile);
+        panel += gold * gapL * (1.0 - stile) * uLeak * 0.75;          // light leaking through the slats
+        panel *= 1.0 - 0.45 * smoothstep(0.12, 0.0, lx) * step(0.02, 1.0 - sh); // the leading edge in shadow
+        // the swinging shutters throw a shadow onto the glass beside them
+        float edgeGap = (1.0 - sh) - px;
+        glass *= 1.0 - 0.65 * smoothstep(0.22, 0.0, edgeGap) * step(0.0, edgeGap) * step(0.01, sh);
+        vec3 win = mix(glass, panel, cover);
+        // curtains, the frame, the sill; warm spill on the wall until the light is cut off
+        float open = 1.0 - sh;
+        float spill = exp(-max(0.0, max(abs(d.x) - 1.0, abs(d.y) - 1.0)) * 3.5) * (0.38 * open + 0.05 * uLeak);
+        col += vec3(1.0, 0.58, 0.2) * spill;
+        float curt = max(inBand(uv.x, 0.13, 0.29), inBand(uv.x, 0.71, 0.87)) * inBand(uv.y, 0.06, 0.95);
+        float fold = 0.5 + 0.5 * sin(uv.x * 150.0);
+        vec3 curtain = vec3(0.34, 0.06, 0.045) * (0.45 + 0.55 * fold) * (0.35 + 1.6 * spill);
+        col = mix(col, curtain, curt);
+        col = mix(col, vec3(0.2, 0.12, 0.07) * (0.6 + 1.2 * spill), inFrame);
+        float sill = inBand(uv.x, w0.x - 0.05, w1.x + 0.05) * inBand(uv.y, w0.y - 0.07, w0.y - 0.035);
+        col = mix(col, vec3(0.36, 0.24, 0.14) * (0.5 + 1.4 * spill), sill);
+        col = mix(col, win, inGlass);
+        // the room goes cold: the picture stays, washed in blue
+        float l = dot(col, vec3(0.3, 0.55, 0.15));
+        vec3 cold = vec3(0.07, 0.13, 0.3) * (0.75 + 0.25 * uv.y) + vec3(0.3, 0.45, 0.85) * l * 0.9;
         return mix(col, cold, uCold);
       }
       void main() {
@@ -209,9 +236,14 @@ export async function tvStage(film) {
   back.position.set(0, 2, -0.9);
   back.receiveShadow = true;
   scene.add(back);
-  const cal = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.56), new THREE.MeshStandardMaterial({ map: calendar(), roughness: 0.8 }));
-  cal.position.set(1.64, 1.72, -0.88);
+  const cal = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.83), new THREE.MeshStandardMaterial({ map: calendar(), roughness: 0.8 }));
+  cal.position.set(1.66, 1.74, -0.88);
   scene.add(cal);
+  // a small warm lamp off to the right, so the calendar reads even before the set warms up
+  const calLamp = new THREE.SpotLight(0xffc98a, 0, 6, 0.45, 0.8, 2);
+  calLamp.position.set(2.6, 2.4, 0.6);
+  calLamp.target.position.set(1.66, 1.74, -0.88);
+  scene.add(calLamp, calLamp.target);
 
   // Armchair back in the foreground, a silhouette against the glow.
   const fabric = new THREE.MeshStandardMaterial({ color: 0x2b1c16, roughness: 0.95 });
@@ -243,13 +275,13 @@ export async function tvStage(film) {
 
   const GOLD = new THREE.Color(1, 0.66, 0.3), BLUE = new THREE.Color(0.35, 0.55, 1.0);
   const S = {
-    scene, tv, screen, scrMat, glow, night, chair, cal, dust,
+    scene, tv, screen, scrMat, glow, night, chair, cal, calLamp, dust,
     fx: { bloom: 0.7, threshold: 0.9, bloomRadius: 0.5, grain: 0.06, vignette: 0.6, tint: [1.0, 0.98, 0.96] },
 
     // on: CRT turn-on 0..1; shut: shutter 0..1; cold: picture and room going blue 0..1.
-    tvAt(t, { on = 1, shut = 0, cold = 0 } = {}) {
+    tvAt(t, { on = 1, shut = 0, cold = 0, leak = 1 } = {}) {
       const U = scrMat.uniforms;
-      U.uTime.value = t; U.uOn.value = on; U.uShut.value = shut; U.uCold.value = cold;
+      U.uTime.value = t; U.uOn.value = on; U.uShut.value = shut; U.uCold.value = cold; U.uLeak.value = leak;
       const bright = on * lerp(1, 0.55, cold) * lerp(1, 0.75, shut * (1 - cold));
       glow.color.copy(GOLD).lerp(BLUE, cold);
       glow.intensity = 12 * bright * (0.94 + 0.06 * Math.sin(t * 55));
@@ -258,6 +290,7 @@ export async function tvStage(film) {
 
     update(ctx) {
       S.tvAt(ctx.t);
+      calLamp.intensity = 0;
       dust.visible = true;
       dust.setTime(ctx.t, [0.01, 0.02, 0]);
     },

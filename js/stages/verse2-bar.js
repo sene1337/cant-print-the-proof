@@ -172,9 +172,9 @@ export async function barStage(film) {
     fx: { bloom: 0.5, threshold: 1.0, bloomRadius: 0.4, grain: 0.045, vignette: 0.6, tint: [1.03, 0.99, 0.93] },
 
     lightOn(t, t0) {
-      // the vault lamp bangs on with a short flicker
+      // full on from the first frame of the word, with a brief hot overshoot as the filament catches
       const dt = t - t0;
-      const on = dt < 0 ? 0 : dt < 0.05 ? 0.6 : dt < 0.09 ? 0.15 : dt < 0.16 ? 1.0 : 1;
+      const on = dt < 0 ? 0 : 1 + 0.45 * Math.exp(-dt * 14);
       spot.intensity = 70 * on;
       cone.material.uniforms.uGain.value = 0.1 * on;
       scene.environmentIntensity = 0.15 + 0.85 * on;
