@@ -1,11 +1,11 @@
 // VERSE 1 night stage: moonlit sea, a cowrie on a string, salt, the rai-stone canoe, the shore stone,
 // and the island whose stones keep the first shared ledger. Palette: moonlit teal and bone.
 import * as THREE from 'three';
-import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { studioEnv } from '../film.js';
 import { loadImage, TEX } from '../tex.js';
 import { clamp, hash1, lerp, easeOut, smooth } from '../util.js';
-import { hangingCowrie } from '../props/verse1-cowrie.js';
+import { hangingCowrie, cowrieEnv } from '../props/verse1-cowrie.js';
 import { raiGeometry, raiMaterial } from '../props/verse1-rai.js';
 import { palmGeometry } from '../props/verse1-palm.js';
 import { canoe as makeCanoe } from '../props/verse1-canoe.js';
@@ -161,23 +161,45 @@ function saltNormal() {
 }
 
 // Salt: glassy cubes pour from above and heap into a cone. A pure function of time since the pour began.
+// Irregular crystal shapes: jittered, flat-shaded polyhedra (a chunk, a shard, a flake).
+function crystalGeometry(kind, seed) {
+  let g = kind === 0 ? new THREE.BoxGeometry(1, 0.8, 0.9) : kind === 1 ? new THREE.OctahedronGeometry(0.75) : new THREE.DodecahedronGeometry(0.62);
+  g.deleteAttribute('normal'); g.deleteAttribute('uv');
+  g = mergeVertices(g);
+  const p = g.attributes.position;
+  const sc = [[1, 1, 1], [1, 0.72, 1.12], [1.25, 0.5, 0.95]][kind];
+  for (let i = 0; i < p.count; i++) {
+    p.setXYZ(i, (p.getX(i) + (hash1(seed + i * 3) - 0.5) * 0.3) * sc[0], (p.getY(i) + (hash1(seed + i * 3 + 1) - 0.5) * 0.3) * sc[1], (p.getZ(i) + (hash1(seed + i * 3 + 2) - 0.5) * 0.3) * sc[2]);
+  }
+  g = g.toNonIndexed();
+  g.computeVertexNormals();
+  return g;
+}
+
+// Salt: irregular translucent crystals pour from above and heap into a cone. A pure function of time.
 function saltPour(env) {
-  const N = 3200;
+  const N = 3300, KINDS = 3;
   const group = new THREE.Group();
-  const geo = new RoundedBoxGeometry(1, 1, 1, 2, 0.1);
+  // Backlit salt glows: a soft white self-light for the scattered light inside, glassy facets on top.
   const mat = new THREE.MeshPhysicalMaterial({
-    color: 0xffffff, roughness: 0.2, metalness: 0, clearcoat: 0.6, clearcoatRoughness: 0.12,
-    envMap: env, envMapIntensity: 1.1, emissive: new THREE.Color(0.1, 0.1, 0.095), specularIntensity: 0.8,
+    color: 0xeef2f1, roughness: 0.12, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.05,
+    emissive: new THREE.Color(0.34, 0.37, 0.37), sheen: 1, sheenRoughness: 0.3, sheenColor: new THREE.Color(0.9, 0.95, 0.95),
+    envMap: env, envMapIntensity: 1.2, specularIntensity: 1, flatShading: true,
   });
-  const mesh = new THREE.InstancedMesh(geo, mat, N);
-  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  mesh.frustumCulled = false;
-  mesh.castShadow = true;
-  const colors = new Float32Array(N * 3);
-  for (let i = 0; i < N; i++) { const v = 0.85 + hash1(i * 7 + 5) * 0.2; colors[i * 3] = v; colors[i * 3 + 1] = v * 0.99; colors[i * 3 + 2] = v * 0.96; }
-  mesh.instanceColor = new THREE.InstancedBufferAttribute(colors, 3);
-  group.add(mesh);
-  const coneMat = new THREE.MeshStandardMaterial({ map: saltTex(), normalMap: saltNormal(), normalScale: new THREE.Vector2(1.6, 1.6), color: 0x9aa3a3, roughness: 0.4, envMap: env, envMapIntensity: 0.6 });
+  const meshes = [];
+  for (let k = 0; k < KINDS; k++) {
+    const m = new THREE.InstancedMesh(crystalGeometry(k, 71 + k * 997), mat, Math.ceil(N / KINDS));
+    m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    m.frustumCulled = false;
+    m.castShadow = true;
+    const colors = new Float32Array(m.count * 3);
+    for (let i = 0; i < m.count; i++) { const v = 0.88 + hash1(i * 7 + 5 + k) * 0.14; colors[i * 3] = v; colors[i * 3 + 1] = v; colors[i * 3 + 2] = v * 0.98; }
+    m.instanceColor = new THREE.InstancedBufferAttribute(colors, 3);
+    group.add(m);
+    meshes.push(m);
+  }
+  const mesh = meshes[0];
+  const coneMat = new THREE.MeshStandardMaterial({ map: saltTex(), normalMap: saltNormal(), normalScale: new THREE.Vector2(1.6, 1.6), color: 0xd9dfdd, roughness: 0.45, envMap: env, envMapIntensity: 0.6, emissive: new THREE.Color(0.06, 0.065, 0.065) });
   const cone = new THREE.Mesh(new THREE.ConeGeometry(1, 1, 96, 1, true), coneMat);
   cone.receiveShadow = true;
   group.add(cone);
@@ -192,7 +214,7 @@ function saltPour(env) {
     cone.visible = hNow > 0.002;
     cone.scale.set(Rnow * 0.9, hNow * 0.9, Rnow * 0.9);
     cone.position.y = (hNow * 0.9) / 2;
-    let k = 0;
+    const counts = [0, 0, 0];
     const spawned = Math.min(N, Math.floor(tau * P.rate));
     for (let i = 0; i < spawned; i++) {
       const ti = i / P.rate;
@@ -225,14 +247,14 @@ function saltPour(env) {
       }
       dummy.position.set(x, y, z);
       dummy.rotation.set(e1 + spin * sp, e2 + spin * sp * 0.7, e3);
-      dummy.scale.setScalar(s);
+      dummy.scale.setScalar(s * 1.15);
       dummy.updateMatrix();
-      mesh.setMatrixAt(k++, dummy.matrix);
+      const kind = i % KINDS;
+      meshes[kind].setMatrixAt(counts[kind]++, dummy.matrix);
     }
-    mesh.count = k;
-    mesh.instanceMatrix.needsUpdate = true;
+    for (let q = 0; q < KINDS; q++) { meshes[q].count = counts[q]; meshes[q].instanceMatrix.needsUpdate = true; }
   };
-  return { group, mesh, cone, pose, mat, P };
+  return { group, mesh, meshes, cone, pose, mat, P };
 }
 
 function islandTerrain() {
@@ -263,7 +285,7 @@ function islandTerrain() {
     const wob = 0.03 * Math.sin(x * 0.9) * Math.cos(z * 0.7) + 0.02 * Math.sin(x * 2.1 + z * 1.7);
     const clearing = 1 - smooth((u + wob - 0.24) / 0.08);
     const sandK = smooth((0.66 - h + wob * 4) / 0.25);
-    const veg = [0.045, 0.065, 0.052], earth = [0.3, 0.28, 0.24], sandC = [0.42, 0.4, 0.35];
+    const veg = [0.035, 0.05, 0.04], earth = [0.19, 0.16, 0.125], sandC = [0.4, 0.37, 0.31];
     const n = 0.85 + 0.3 * hash1(i);
     const c = [0, 1, 2].map((k) => (veg[k] * (1 - sandK) + sandC[k] * sandK) * (1 - clearing) + earth[k] * clearing);
     col.push(c[0] * n, c[1] * n, c[2] * n);
@@ -356,7 +378,7 @@ export async function seaStage(film) {
   scene.add(warm);
 
   // Cowrie on its string.
-  const cowrie = hangingCowrie({ length: 0.26, cord: 2.5, env });
+  const cowrie = hangingCowrie({ length: 0.26, cord: 2.5, env: cowrieEnv(film.renderer) });
   scene.add(cowrie.group);
 
   // Salt on a dark wet rock.
@@ -368,8 +390,8 @@ export async function seaStage(film) {
   salt.group.add(rock);
   scene.add(salt.group);
   const hand = new THREE.Mesh(cuppedHandGeometry(), new THREE.MeshPhysicalMaterial({
-    color: 0x5a3c2e, roughness: 0.62, metalness: 0, sheen: 0.25, sheenRoughness: 0.6, sheenColor: new THREE.Color(0.8, 0.55, 0.42),
-    envMapIntensity: 0.5,
+    color: 0x1b110c, roughness: 0.6, metalness: 0, sheen: 0.18, sheenRoughness: 0.5, sheenColor: new THREE.Color(0.62, 0.36, 0.26),
+    envMapIntensity: 0.18,
   }));
   hand.castShadow = true; hand.receiveShadow = true;
   hand.position.y = -0.0115;
@@ -431,11 +453,11 @@ export async function seaStage(film) {
   island.position.copy(SETS.island);
   const terr = islandTerrain();
   island.add(terr.mesh);
-  const RING_R = 9.0, NR = 11;
+  const RING_R = 10.5, NR = 11;
   const ring = [];
   for (let i = 0; i < NR; i++) {
     const phi = (i / NR) * Math.PI * 2 + (hash1(i * 17 + 3) - 0.5) * 0.18;
-    const R = 1.05 + hash1(i * 17 + 4) * 0.85;
+    const R = 1.35 + hash1(i * 17 + 4) * 0.95;
     const mat = stoneMat.clone();
     mat.emissive = new THREE.Color(1.0, 0.86, 0.62);
     mat.emissiveIntensity = 0;
@@ -579,7 +601,7 @@ export async function seaStage(film) {
       hemi.intensity = 0.55;
       fill.intensity = 0; fill.color.set(0xcfd8d2); fill.position.set(0, 5, 10); fill.target.position.set(0, 0, 0);
       warm.intensity = 0;
-      cowrie.group.visible = false;
+      cowrie.group.visible = false; cowrie.holder.rotation.set(0, 0, 0); cowrie.spinner.rotation.set(0, 0, 0);
       salt.group.visible = false;
       rock.visible = true; hand.visible = false;
       boat.group.visible = false;

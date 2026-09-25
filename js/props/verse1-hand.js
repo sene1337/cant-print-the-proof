@@ -43,10 +43,10 @@ function handModel() {
   const bones = [];
   // Fingers: index (far side, next to the thumb) to little finger (near side).
   const F = [
-    { z: -2.9, len: [4.0, 2.4, 2.0], r: [0.98, 0.9, 0.8, 0.68], splay: -0.1, curl: [0.42, 0.62, 0.5] },
-    { z: -1.0, len: [4.4, 2.7, 2.2], r: [1.0, 0.92, 0.82, 0.7], splay: -0.03, curl: [0.45, 0.66, 0.52] },
-    { z: 0.95, len: [4.1, 2.6, 2.1], r: [0.96, 0.88, 0.78, 0.66], splay: 0.05, curl: [0.5, 0.68, 0.52] },
-    { z: 2.75, len: [3.3, 2.0, 1.7], r: [0.85, 0.78, 0.7, 0.58], splay: 0.15, curl: [0.55, 0.7, 0.5] },
+    { z: -2.6, len: [4.0, 2.4, 1.9], r: [0.96, 0.86, 0.74, 0.58], splay: -0.07, curl: [0.36, 0.55, 0.48] },
+    { z: -0.87, len: [4.4, 2.7, 2.1], r: [0.98, 0.88, 0.76, 0.6], splay: -0.02, curl: [0.42, 0.6, 0.5] },
+    { z: 0.87, len: [4.1, 2.6, 2.0], r: [0.94, 0.84, 0.72, 0.57], splay: 0.03, curl: [0.5, 0.66, 0.52] },
+    { z: 2.5, len: [3.3, 2.0, 1.65], r: [0.84, 0.76, 0.66, 0.52], splay: 0.09, curl: [0.6, 0.72, 0.52] },
   ];
   for (const f of F) {
     const root = [-4.4, 0.3, f.z];
@@ -54,8 +54,8 @@ function handModel() {
     bones.push(...segs);
   }
   // The fleshy walls of the cup: the ball of the thumb and the heel along the little-finger side.
-  bones.push({ a: [2.6, 0.4, -2.6], b: [-1.0, 0.9, -3.4], r: [2.0, 1.4] });
-  bones.push({ a: [2.8, 0.3, 3.0], b: [-2.8, 0.8, 3.4], r: [1.6, 1.3] });
+  bones.push({ a: [2.6, 0.2, -2.5], b: [-0.6, 0.6, -3.2], r: [1.7, 1.2] });
+  bones.push({ a: [2.8, 0.1, 2.9], b: [-2.8, 0.45, 3.2], r: [1.25, 1.05] });
   // Thumb: from the heel of the palm on the far side, up and over.
   const t0 = [1.6, 0.0, -3.2];
   const tsegs = finger(t0, [-0.62, 0, -0.78], [4.2, 3.2, 2.6], [1.45, 1.1, 0.95, 0.82], [0.3, 0.42, 0.38], 0.55);
@@ -67,7 +67,7 @@ function handModel() {
     // Palm, cupped: lift the edges.
     const cup = 0.06 * (px * px * 0.45 + pz * pz);
     let d = sdRoundBox(px, py - cup, pz, 4.6, 1.15, 4.3, 1.1);
-    for (const b of bones) d = smin(d, sdCapsule(px, py, pz, b.a, b.b, b.r), 0.9);
+    for (const b of bones) d = smin(d, sdCapsule(px, py, pz, b.a, b.b, b.r), 0.75);
     return d * cm;
   };
 }

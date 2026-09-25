@@ -6,11 +6,12 @@ import { clamp, lerp, smooth, easeOut, easeIn, easeInOut, easeOutBack, pulse, ra
 import { seaStage, SETS } from '../stages/verse1-sea.js';
 import { earthStage } from '../stages/verse1-earth.js';
 import { forgeStage } from '../stages/verse1-forge.js';
+import { mintStage } from '../stages/verse1-mint.js';
 
-const SEA = 'verse1-sea', EARTH = 'verse1-earth', FORGE = 'verse1-forge';
+const SEA = 'verse1-sea', EARTH = 'verse1-earth', FORGE = 'verse1-forge', MINT = 'verse1-mint';
 
 // Stage builders this section owns: { id: async (film) => stage }. Ids must be unique across the film.
-export const stages = { [SEA]: seaStage, [EARTH]: earthStage, [FORGE]: forgeStage };
+export const stages = { [SEA]: seaStage, [EARTH]: earthStage, [FORGE]: forgeStage, [MINT]: mintStage };
 
 const BASIS = new THREE.Matrix4(), V3a = new THREE.Vector3(), V3b = new THREE.Vector3(), V3c = new THREE.Vector3();
 const add = (p, x, y, z) => (Array.isArray(p) ? [p[0] + x, p[1] + y, p[2] + z] : [p.x + x, p.y + y, p.z + z]);
@@ -22,33 +23,45 @@ export function shots(S, T) {
   const W = (w, after = 9.6) => T.wordAfter(w, after).s;
   const tShell = W('shell'), tI2 = T.wordAfter('I', 11.3).s, tSalt = W('salt'), tStone = W('stone');
 
-  // 1. I was a shell on a string: a cowrie turns on its cord in front of a huge moon.
+  // 1. I was a shell on a string: a cowrie pendant turns slowly on its cord in front of a huge moon.
+  //    Seen from a little below, so the toothed aperture on its flat underside reads from the first frame.
   const hang = add(SETS.shell, 0, 1.45, 0);
-  S(9.66, SEA, night(orbitCam({ target: add(SETS.shell, 0, 1.31, 0), dist: [1.35, 1.05], az: [-6, 4], el: [-2, 0], fov: 28, look: (c) => add(SETS.shell, -0.17 - 0.02 * c.u, 1.36, 0), ease: easeOut })),
+  S(9.66, SEA, night(orbitCam({ target: add(SETS.shell, 0, 1.345, 0), dist: [1.0, 0.8], az: [-10, 2], el: [-14, -11], fov: 30,
+    look: (c) => add(SETS.shell, -0.11 - 0.02 * c.u, 1.37, 0), ease: easeOut })),
     (s, c) => {
-      s.moonAz = -14; s.moonEl = 7.5; s.moonSize = 16; s.moonGain = 1.15;
+      s.moonAz = -15; s.moonEl = 8.6; s.moonSize = 16; s.moonGain = 1.15;
       s.skyU.uHalo.value = 0.03; s.seaU.uGlint.value = 1.0;
       s.cowrie.group.visible = true;
       s.cowrie.group.position.set(...hang);
-      s.cowrie.group.rotation.set(0.03 * Math.sin(c.t * 1.7), 4.5 - c.lt * 0.42, 0.05 * Math.sin(c.t * 1.3 + 1));
-      s.fill.intensity = 0.75; s.fill.color.set(0xffe6c8); s.fill.position.set(...add(SETS.shell, 2.2, 1.9, 2)); s.fill.target.position.set(...hang);
+      s.cowrie.group.rotation.set(0.02 * Math.sin(c.t * 1.7), 0, 0.03 * Math.sin(c.t * 1.3 + 1));
+      s.cowrie.holder.rotation.set(-0.34, 0, 0); // underside tipped toward us
+      s.cowrie.spinner.rotation.set(0, -0.95 + c.lt * 0.26, 0);
+      // moonlight bouncing up off the sea lights the white underside and the teeth
+      s.fill.intensity = 1.1; s.fill.color.set(0xdfe8e6); s.fill.position.set(...add(SETS.shell, 0.4, 0.2, 1.6)); s.fill.target.position.set(...hang);
       s.moonLight.intensity = 3.2; s.moonLight.target.position.set(...hang); s.moonLight.castShadow = false;
-    }, { fadeIn: 0.35, aperture: 0.00012, focus: 1.2, maxblur: 0.004, bloom: 0.3 });
+    }, { fadeIn: 0.35, aperture: 0.00012, focus: 0.95, maxblur: 0.004, bloom: 0.3 });
 
-  // 2. I was salt in your hand: glassy salt cubes pour through the moonlight and heap up in a cupped hand.
+  // 2. I was salt in your hand: irregular translucent salt crystals pour into a cupped hand,
+  //    a dark silhouette against the moon's glitter path, rim-lit, the crystals glowing with the backlight.
   const saltAt = add(SETS.shell, 3, 0.5, 0);
-  S(tI2, SEA, night(orbitCam({ target: add(saltAt, -0.01, 0.02, 0), dist: [0.38, 0.31], az: [-6, 4], el: [30, 26], fov: 30, look: (c) => add(saltAt, -0.01, 0.03, 0) })),
+  // (narrow frames: frame the palm and the stream, not the whole arm, so the camera barely pulls back)
+  const saltCam = orbitCam({ target: add(saltAt, -0.01, 0.025, 0), dist: [0.36, 0.3], az: [26, 18], el: [13, 11], fov: 30, look: (c) => add(saltAt, -0.008, 0.04, 0), ease: easeOut });
+  S(tI2, SEA, night((c, cam, st) => {
+    const narrow = Math.max(1, (16 / 9) / c.aspect);
+    saltCam({ ...c, aspect: (16 / 9) / Math.pow(narrow, 0.45) }, cam, st);
+  }),
     (s, c) => {
-      s.moonAz = -55; s.moonEl = 16; s.moonSize = 10;
+      s.moonAz = -20; s.moonEl = 15; s.moonSize = 9;
+      s.seaU.uGlint.value = c.aspect < 1 ? 0.7 : 1.2;
       s.salt.group.visible = true;
       s.salt.group.position.set(...saltAt);
       s.rock.visible = false; s.hand.visible = true;
-      Object.assign(s.salt.P, { hmax: 0.03, smin: 0.0022, sadd: 0.0022, spread: 0.01, H: 0.26 });
+      Object.assign(s.salt.P, { hmax: 0.028, smin: 0.0022, sadd: 0.0026, spread: 0.01, H: 0.26 });
       s.salt.pose(c.t - tI2 + 1.2);
-      s.moonLight.intensity = 3.4; s.moonLight.target.position.set(...saltAt); s.moonLight.castShadow = true; s.hemi.intensity = 0.35;
-      s.shadowAround({ x: saltAt[0], y: saltAt[1], z: saltAt[2] }, 1);
-      s.fill.intensity = 0.6; s.fill.position.set(...add(saltAt, 1, 1.5, 2)); s.fill.target.position.set(...saltAt);
-    }, { aperture: 0.004, focus: 0.37, maxblur: 0.012, bloomRadius: 0.3 });
+      s.moonLight.intensity = 3.6; s.moonLight.target.position.set(...saltAt); s.moonLight.castShadow = false;
+      s.hemi.intensity = 0.18;
+      s.fill.intensity = 0.22; s.fill.position.set(...add(saltAt, 0.6, 0.8, 1.2)); s.fill.target.position.set(...saltAt);
+    }, { aperture: 0.0045, focus: 0.38, maxblur: 0.014, bloomRadius: 0.35, bloom: 0.5 });
 
   // 3. I was a stone they rowed home from a faraway land: a canoe carries a rai stone across the moon path.
   const tToo = W('too', 14.9), tSo = T.wordAfter('so', 16.3).s, tEvery = W('every', 17.5), tThen = W('then', 20.2);
@@ -98,51 +111,52 @@ export function shots(S, T) {
     s.hemi.intensity = 0.45;
   }, { bloom: 0.5, shake: 0.0015, aperture: 0.00008, focus: 25, maxblur: 0.004 });
 
-  // 5. So the whole island kept count: rise up and back over the island and its ring of stones.
+  // 5. So the whole island kept count: from eye level among the big stones, rise up and back over the ring.
   const I = SETS.island;
-  S(tSo, SEA, night(moveCam({ from: add(I, 3, 10, 27), to: add(I, 9, 31, 49), look: add(I, 0, 1.6, 0), look2: add(I, 0, 0.6, -2), fov: [34, 35], ease: easeInOut })),
+  S(tSo, SEA, night(moveCam({ from: add(I, 3.5, 3.4, 18.5), to: add(I, 6.5, 10.5, 27), look: add(I, -0.5, 2.6, 0), look2: add(I, 0, 1.2, -1.5), fov: [40, 38], ease: easeInOut })),
     (s, c) => {
-      s.moonAz = 68; s.moonEl = 24; s.moonSize = 7;
+      s.moonAz = 118; s.moonEl = 17; s.moonSize = 7;
       s.island.visible = true;
-      s.moonLight.intensity = 3.0; s.moonLight.color.set(0xeae4d4); s.moonLight.target.position.set(I.x, 0, I.z);
-      s.shadowAround({ x: I.x, y: 0, z: I.z }, 55);
-      s.hemi.intensity = 0.28;
-    }, { bloom: 0.45 });
+      s.moonLight.intensity = 4.4; s.moonLight.color.set(0xefe8d8); s.moonLight.target.position.set(I.x, 0, I.z);
+      s.shadowAround({ x: I.x, y: 0, z: I.z }, 40);
+      s.hemi.intensity = 0.12;
+    }, { bloom: 0.4, contrast: 1.12 });
 
   // 6. Every name, every owner, every stone, every amount: threads of light link the stones, one set per "every".
   const hits = [tEvery];
   while (hits.length < 4) hits.push(T.wordAfter('every', hits[hits.length - 1] + 0.15).s);
-  S(tEvery, SEA, night(orbitCam({ target: add(I, 0, 1.6, 0), dist: [31, 27], az: [14, 34], el: [52, 58], fov: 36, ease: easeInOut })),
+  S(tEvery, SEA, night(orbitCam({ target: add(I, 0, 1.8, 0), dist: [33, 29], az: [14, 34], el: [50, 56], fov: 38, ease: easeInOut })),
     (s, c) => {
-      s.moonAz = 68; s.moonEl = 24; s.moonSize = 7;
+      s.moonAz = 118; s.moonEl = 22; s.moonSize = 7;
       s.island.visible = true;
-      s.moonLight.intensity = 3.0; s.moonLight.color.set(0xeae4d4); s.moonLight.target.position.set(I.x, 0, I.z);
-      s.shadowAround({ x: I.x, y: 0, z: I.z }, 55);
-      s.hemi.intensity = 0.28;
+      s.moonLight.intensity = 4.0; s.moonLight.color.set(0xefe8d8); s.moonLight.target.position.set(I.x, 0, I.z);
+      s.shadowAround({ x: I.x, y: 0, z: I.z }, 40);
+      s.hemi.intensity = 0.14;
       s.ledger(c.t, hits);
       const glow = clamp((c.t - hits[3] - 0.25) / 0.5);
       s.warm.intensity = 14 * glow; s.warm.position.set(I.x, 5, I.z);
     }, { bloom: 0.45 });
 
-  // 7. Then they dug me up as gold from the dark underground: sink through the strata to a gold vein; the nugget flares on "gold".
+  // 7. Then they dug me up as gold from the dark underground: from the grass line, sink down the cut face
+  //    through soil, clay and broken rock into dark bedrock and a quartz seam; the nugget flares on "gold".
   const tGold = W('gold', 21), tHard = W('hard', 22.9), tSo2 = T.wordAfter('so', 24.3).s, tKings = W('kings', 25.5);
   S(tThen, EARTH, (c, cam, st) => {
     const N = st.nuggetPos;
     const e = easeInOut(clamp((c.t - tThen) / (tGold - 0.05 - tThen)));
     const push = easeInOut(clamp((c.t - tGold) / (tHard - tGold)));
     const aspectZoom = Math.pow(Math.max(1, (16 / 9) / c.aspect), 0.8);
-    const y = lerp(0.45, N.y + 0.22, e);
-    cam.position.set(lerp(0.2, N.x - 0.25, e), y + push * 0.05, lerp(6.2, 2.4, push) * aspectZoom);
-    cam.lookAt(lerp(0.2, N.x - 0.05, e), y - 0.12 - 0.08 * e, 0);
+    const y = lerp(-1.25, N.y + 0.2, e);
+    cam.position.set(lerp(0.1, N.x - 0.3, e), y + push * 0.02, lerp(5.6, 2.2, push) * aspectZoom);
+    cam.lookAt(lerp(0.1, N.x - 0.08, e), y - 0.1 - 0.1 * e, 0);
     cam.fov = 40;
   }, (s, c) => {
     const near = clamp((c.t - tThen) / (tGold - tThen));
     const fl = c.t >= tGold ? pulse(c.t - tGold, 2.6) : 0;
-    s.U.uGlow.value = 0.25 + 0.75 * smooth(near) + 0.15 * Math.sin(c.t * 5) * (c.t > tGold ? 1 : 0);
+    s.U.uGlow.value = 0.2 + 0.8 * smooth(near) + 0.15 * Math.sin(c.t * 5) * (c.t > tGold ? 1 : 0);
     s.U.uFlare.value = fl;
-    s.nugget.material.emissiveIntensity = 0.05 + 0.25 * smooth(near) + 3.0 * fl;
-    s.glow.intensity = 1.5 + 5 * smooth(near) + 18 * fl;
-  }, { bloom: 0.6 });
+    s.nugget.material.emissiveIntensity = 0.03 + 0.1 * smooth(near) + 2.6 * fl;
+    s.glow.intensity = 1 + 3.5 * smooth(near) + 16 * fl;
+  }, { bloom: 0.55 });
 
   // 8. Hard to make, hard to fake: molten gold pours from a crucible into a blank mould.
   S(tHard, FORGE, orbitCam({ target: [-0.42, 0.62, 0], dist: [4.7, 4.1], az: [24, 15], el: [5, 9], fov: 34, ease: easeOut }),
@@ -159,31 +173,55 @@ export function shots(S, T) {
       s.orbit(c.t, clamp((c.t - tSo2 + 0.2) / (tKings - tSo2)));
     }, { bloom: 0.35 });
 
-  // 10. Kings put their faces on me, stamped me: the die comes down on the blank; the king's face is struck.
+  // 10. Kings put their faces on me: the coin's own view. Looking up from the blank, the die comes down,
+  //     the king's portrait cut into its steel face in mirror relief, filling the frame.
   const tStamped = W('stamped', 27), tSwore = W('swore', 27.8), tBut = W('but', 28.2), tWar = W('war', 29), tMore = W('more', 30.3);
+  const tStrikeCut = T.beats[T.beatIndex(tStamped)]; // the last beat before "stamped"
   const Z0 = 0.35;
+  const faceY = (u) => lerp(3.95, 3.0, u);
+  S(tKings, MINT, (c, cam) => {
+    const u = easeInOut(c.u);
+    const aspectZoom = Math.pow(Math.max(1, (16 / 9) / c.aspect), 0.8);
+    cam.position.set(0.0, 0.25, 0.85);
+    cam.up.set(0, 0, -1);
+    cam.lookAt(0, faceY(u), 0.05);
+    cam.fov = (2 * Math.atan(Math.tan((40 * Math.PI) / 360) * aspectZoom) * 180) / Math.PI;
+  }, (s, c) => {
+    const u = easeInOut(c.u);
+    const fy = faceY(u);
+    s.blankCoin.visible = false;
+    s.die.position.set(0, fy + 1.2, 0);
+    s.die.rotation.set(0, Math.PI + 0.12 - 0.12 * u, 0);
+    // one broad raking light from the top of the frame, grazing the face
+    s.rake.intensity = 70; s.rake.angle = 0.7; s.rake.penumbra = 0.9; s.rake.color.set(0xe6ecf2);
+    s.rake.position.set(0.4, fy - 1.1, -3.4); s.rake.target.position.set(0, fy, 0);
+    s.key.intensity = 0;
+    s.scene.environmentIntensity = 0.6;
+  }, { bloom: 0.3, shake: 0.002, vignette: 0.6 });
+
+  // 10b. ...stamped me: a close side view; the die slams down on "stamped", sparks fly, and it lifts off
+  //      the new face.
   const dieY = (t) => {
     const contact = 1.37;
-    if (t < tStamped - 0.2) return lerp(3.05, 2.75, clamp((t - tKings) / (tStamped - 0.2 - tKings)));
-    if (t < tStamped) return lerp(2.75, contact, easeIn((t - tStamped + 0.2) / 0.2, 2.2));
-    return contact + 1.5 * easeOut(clamp((t - tStamped - 0.06) / 0.5), 2.5);
+    if (t < tStamped - 0.2) return lerp(2.4, 2.15, clamp((t - tStrikeCut) / (tStamped - 0.2 - tStrikeCut)));
+    if (t < tStamped) return lerp(2.15, contact, easeIn((t - tStamped + 0.2) / 0.2, 2.2));
+    return contact + 1.8 * easeOut(clamp((t - tStamped - 0.06) / 0.55), 2.5);
   };
-  S(tKings, 'gold', (c, cam) => {
-    orbitCam({ target: (cc) => [0, lerp(0.95, 0.72, easeInOut(cc.u)), 0], dist: [5.2, 4.35], az: [32, 20], el: [2, 7], fov: 34, ease: easeInOut })(c, cam);
+  S(tStrikeCut, MINT, (c, cam) => {
+    const after = easeInOut(clamp((c.t - tStamped - 0.1) / 0.55));
+    orbitCam({ target: [0, lerp(0.42, 0.2, after), 0], dist: lerp(3.0, 2.85, after), az: lerp(26, 20, after), el: lerp(14, 34, after), fov: 34 })(c, cam);
     const k = c.t > tStamped ? pulse(c.t - tStamped, 9) : 0;
     cam.position.y += (Math.sin(c.t * 91) * 0.03 + Math.sin(c.t * 57) * 0.02) * k;
     cam.position.x += Math.sin(c.t * 73) * 0.03 * k;
   }, (s, c) => {
     const struck = c.t >= tStamped;
     s.blankCoin.visible = !struck;
-    s.blankCoin.position.set(0, 0.09, 0); s.blankCoin.rotation.set(-Math.PI / 2, 0, Z0);
+    s.blankCoin.rotation.set(-Math.PI / 2, 0, Z0);
     s.coin.visible = struck;
-    s.coin.position.set(0, 0.09, 0); s.coin.rotation.set(-Math.PI / 2, 0, Z0);
+    s.coin.rotation.set(-Math.PI / 2, 0, Z0);
     s.coin.setEmissive([1, 0.62, 0.25], struck ? 0.8 * pulse(c.t - tStamped, 8) : 0);
-    s.die.visible = true;
     s.die.position.set(0, dieY(c.t), 0);
     s.burst(c.t, tStamped, [0, 0.18, 0], 1.0);
-    s.key.position.set(-3.5, 4.5, 3.5); s.key.target.position.set(0, 0.2, 0);
   }, { bloom: 0.4 });
 
   // 11. ...and swore: a close, admiring look at the new face. On "but" the light turns red.
@@ -195,41 +233,80 @@ export function shots(S, T) {
     s.rim.intensity = lerp(2.5, 4.5, k);
     s.scene.environmentIntensity = lerp(1, 0.22, k);
   };
-  S(tSwore, 'gold', orbitCam({ target: [0.02, 0.09, 0.08], dist: [4.2, 3.75], az: [-24, -12], el: [50, 46], fov: 30, ease: easeOut }),
+  S(tSwore, MINT, orbitCam({ target: [0.02, 0.09, 0.08], dist: [4.2, 3.75], az: [-24, -12], el: [50, 46], fov: 30, ease: easeOut }),
     (s, c) => {
-      s.coin.position.set(0, 0.09, 0); s.coin.rotation.set(-Math.PI / 2, 0, Z0 + 0.04 * c.lt);
-      s.key.position.set(-3.2 + c.lt * 1.4, 1.3, -3.6); s.key.target.position.set(0, 0.1, 0);
+      s.die.visible = false; s.blankCoin.visible = false;
+      s.coin.visible = true; s.coin.rotation.set(-Math.PI / 2, 0, Z0 + 0.04 * c.lt);
+      s.key.position.set(-3.2 + c.lt * 1.4, 2.0, -3.6); s.key.target.position.set(0, 0.1, 0);
       setRed(s, redAt(c.t));
       s.key.intensity *= 0.55; s.rim.intensity *= 0.6;
       s.coin.setRelief(0.8);
     }, { aperture: 0.00012, focus: 3.95, maxblur: 0.005, threshold: 2.2, bloom: 0.25 });
 
-  // 12. But a king with a war always wants a little more: in red light a blade comes down and nicks the edge on "more".
-  const r = rng(11);
-  const a0 = r() * Math.PI * 2, w0 = 0.12 + r() * 0.25, d0 = 0.05 + r() * 0.11;
-  S(tWar, 'gold', (c, cam) => {
-    const phi = a0 + Z0;
-    const nx = Math.cos(phi), nz = -Math.sin(phi);
-    const tx = nx * 0.75, tz = nz * 0.75;
-    const nAz = (Math.atan2(nx, nz) * 180) / Math.PI;
-    orbitCam({ target: [tx * 0.3, 0.3, tz * 0.3], dist: [4.4, 3.8], az: [nAz + 97, nAz + 93], el: [34, 38], fov: 32, ease: easeOut })(c, cam);
+  // 12. But a king with a war always wants a little more: in red light a steel blade comes down past the
+  //     coin's edge; on "more" it shears off a sliver of gold, which flies with the sparks. Verse 2 continues.
+  const tLittle = W('little', 30.2);
+  // camera azimuth (degrees) for the blade shot: 3/4 on to the blade, which stands at the notch
+  const notchDir = (n) => { const phi = n.a + Z0; return [Math.cos(phi), 0, -Math.sin(phi)]; };
+  const warAz = (c, n) => { const rd = notchDir(n); return (Math.atan2(rd[0], rd[2]) * 180) / Math.PI + lerp(58, 50, easeOut(c.u)); };
+  S(tWar, MINT, (c, cam) => {
+    const n = c.film.stages.get(MINT).notch;
+    const rd = notchDir(n);
+    const az = warAz(c, n);
+    orbitCam({ target: [rd[0] * 0.3, 0.3, rd[2] * 0.3], dist: [4.6, 4.0], az, el: [34, 38], fov: 32, ease: easeOut })(c, cam);
     const k = c.t > tMore ? pulse(c.t - tMore, 10) : 0;
     cam.position.y += Math.sin(c.t * 83) * 0.025 * k;
-  }, (s, c) => {
+  }, (s, c, cam) => {
     setRed(s, 1);
-    s.key.position.set(3.2, 3.4, 2.6); s.key.target.position.set(0, 0.1, 0);
-    s.key.intensity = 14 + 2.5 * Math.sin(c.t * 9.3) * Math.sin(c.t * 5.1);
-    s.scene.environmentIntensity = 0.35;
-    s.coin.position.set(0, 0.09, 0); s.coin.rotation.set(-Math.PI / 2, 0, Z0);
+    s.die.visible = false; s.blankCoin.visible = false;
+    const azr = (warAz(c, s.notch) * Math.PI) / 180;
+    const camDir = [Math.sin(azr), 0, Math.cos(azr)];
+    // key from above, a little right of the camera (its mirror bounce misses the lens); weak rim from the side
+    const ka = azr + (22 * Math.PI) / 180, ke = (40 * Math.PI) / 180;
+    s.key.position.set(5.3 * Math.sin(ka) * Math.cos(ke), 5.3 * Math.sin(ke), 5.3 * Math.cos(ka) * Math.cos(ke));
+    s.key.target.position.set(0, 0.1, 0);
+    s.key.intensity = 12 + 2 * Math.sin(c.t * 9.3) * Math.sin(c.t * 5.1);
+    const ra = azr + (105 * Math.PI) / 180;
+    s.rim.position.set(5 * Math.sin(ra), 1.8, 5 * Math.cos(ra));
+    s.rim.intensity = 2.2;
+    s.scene.environmentIntensity = 0.3;
+    // the red haze stands behind the blade, facing us
+    {
+      const n0 = s.notch, rd0 = notchDir(n0), ch = 1 - n0.d;
+      s.haze.visible = true;
+      s.haze.position.set(rd0[0] * ch - camDir[0] * 2.2, 0.004, rd0[2] * ch - camDir[2] * 2.2);
+      s.haze.scale.set(6, 6, 1);
+    }
+    s.coin.visible = true;
+    s.coin.rotation.set(-Math.PI / 2, 0, Z0);
     const cut = c.t >= tMore;
     s.coin.setClip(cut ? 0.12 : 0);
-    const phi = a0 + Z0;
-    const R = 1 * (1 - d0);
+    const n = s.notch;
+    const phi = n.a + Z0;
     const rd = [Math.cos(phi), 0, -Math.sin(phi)], tg = [Math.sin(phi), 0, Math.cos(phi)];
+    const chord = 1 - n.d;
+    // the blade hangs, then drops on "little" and shears through on "more"
+    const yb = c.t < tLittle ? lerp(1.1, 0.8, easeInOut(clamp((c.t - tWar) / (tLittle - tWar))))
+      : lerp(0.8, 0.0, easeIn(clamp((c.t - tLittle) / (tMore - tLittle)), 2.4));
     s.blade.visible = true;
-    const yb = c.t < tMore - 0.12 ? lerp(1.9, 1.05, easeInOut(clamp((c.t - tWar) / (tMore - 0.12 - tWar)))) : lerp(1.05, 0.46, easeIn(clamp((c.t - tMore + 0.12) / 0.12), 2));
-    s.blade.position.set(rd[0] * R, yb, rd[2] * R);
-    s.blade.quaternion.setFromRotationMatrix(BASIS.makeBasis(V3a.set(...tg), V3b.set(...rd), V3c.set(0, 1, 0)));
-    s.burst(c.t, tMore, [rd[0] * (R + 0.04), 0.17, rd[2] * (R + 0.04)], 0.45);
+    s.blade.position.set(rd[0] * chord, yb, rd[2] * chord);
+    s.blade.quaternion.setFromRotationMatrix(BASIS.makeBasis(V3a.set(...tg), V3b.set(0, 1, 0), V3c.set(...rd)));
+    // a bright back light on the steel, and the red key on the coin
+    s.bladeLight.intensity = 0;
+    s.bladeLight.position.set(rd[0] * 3.5 - tg[0] * 1.5, 2.6, rd[2] * 3.5 - tg[2] * 1.5);
+    s.bladeLight.target.position.set(rd[0] * chord, 0.6, rd[2] * chord);
+    // the sliver: part of the coin until the cut, then it flies off, tumbling
+    s.sliver.visible = cut;
+    if (cut) {
+      const dt = c.t - tMore;
+      const mid = n.mid;
+      // centre of the sliver in world space (coin lies flat, its local xy maps to world x, -z after Z0 turn)
+      const la = Math.atan2(mid.y, mid.x) + Z0, lr = Math.hypot(mid.x, mid.y);
+      const cx = Math.cos(la) * lr, cz = -Math.sin(la) * lr;
+      s.sliver.position.set(cx + rd[0] * 1.6 * dt, 0.09 + 1.1 * dt - 4.9 * dt * dt, cz + rd[2] * 1.6 * dt);
+      s.sliver.rotation.set(-Math.PI / 2, 0, Z0);
+      s.sliver.rotateOnWorldAxis(V3a.set(...tg), -9 * dt);
+    }
+    s.burst(c.t, tMore, [rd[0] * (chord + 0.04), 0.17, rd[2] * (chord + 0.04)], 0.5);
   }, { bloom: 0.45, tint: [1.12, 0.9, 0.84] });
 }

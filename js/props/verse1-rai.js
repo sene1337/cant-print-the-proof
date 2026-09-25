@@ -22,6 +22,7 @@ export function raiGeometry({ R = 1, rh = 0.22, th = 0.34, te = 0.17, seed = 1, 
   arc(R - edgeR, 0, edgeR, Math.PI * 0.5, -Math.PI * 0.5, 10);
   for (let i = N - 1; i >= 1; i--) { const r = rh + b + (R - edgeR - rh - b) * (i / N); push(r, -t(r) / 2); }
   pts.push(pts[0].clone());
+  pts.reverse(); // counter-clockwise in (r, y), so the lathe faces point out of the stone
   const g = new THREE.LatheGeometry(pts, segs);
   // Hand-carved irregularity: periodic noise around the ring, stronger towards the rim.
   const R0 = rng(seed);

@@ -6,7 +6,7 @@ import { studioEnv, orbitCam, moveCam } from '../film.js';
 import { Coin } from '../props/coin.js';
 import { Block, link } from '../props/block.js';
 import { Dust } from '../props/dust.js';
-import { cowrie as v1Cowrie } from '../props/verse1-cowrie.js';
+import { cowrie as v1Cowrie, cowrieEnv } from '../props/verse1-cowrie.js';
 import { readableBothSides } from '../props/notes.js';
 import { coinFace, edgeText, banknote, textCard, loadImage, TEX } from '../tex.js';
 import { clamp, lerp, smooth, easeOut, easeIn, easeInOut, easeOutBack, pulse, range, hash1 } from '../util.js';
@@ -110,7 +110,7 @@ async function turntable(film) {
   scene.add(stars);
 
   // The same cowrie that opens verse 1, so the film ends where it began.
-  const shell = v1Cowrie({ length: 1.35 });
+  const shell = v1Cowrie({ length: 1.35, env: cowrieEnv(film.renderer) });
   const coin = new Coin({ radius: 0.62, thickness: 0.1, face: await coinFace('stater'), metal: 'gold', edge: edgeText('CAN’T PRINT THE PROOF'), seed: 31 });
   const noteTex = await banknote({ seed: 5 });
   const noteGeo = new THREE.PlaneGeometry(2.1, 0.9, 24, 6);

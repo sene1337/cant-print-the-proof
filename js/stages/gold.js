@@ -30,7 +30,7 @@ export async function goldStage(film) {
 
   const face = await coinFace('stater');
   const blank = await coinFace('stater', { blank: true });
-  const coin = new Coin({ radius: 1, thickness: 0.16, face, metal: 'gold', edge: edgeText("CAN'T PRINT THE PROOF"), seed: 11 });
+  const coin = new Coin({ radius: 1, thickness: 0.16, face, metal: 'gold', edge: edgeText('CAN’T PRINT THE PROOF'), seed: 11 });
   scene.add(coin);
 
   // A struck blank for the minting shots.

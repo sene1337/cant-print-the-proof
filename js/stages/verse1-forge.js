@@ -105,7 +105,7 @@ export async function forgeStage(film) {
   // The mould: a dark iron block with a round cavity the size of a blank.
   const BR = 0.5;
   const ironMat = new THREE.MeshStandardMaterial({ color: 0x1b1a19, roughness: 0.55, metalness: 0.7 });
-  const mouldPts = [[0, -0.12], [BR, -0.12], [BR, 0], [BR + 0.02, 0.012], [0.95, 0.012], [1.0, -0.03], [1.02, -0.6]].map(([r, y]) => new THREE.Vector2(r, y));
+  const mouldPts = [[1.02, -0.6], [1.0, -0.03], [0.95, 0.012], [BR + 0.02, 0.012], [BR, 0], [BR, -0.12], [0, -0.12]].map(([r, y]) => new THREE.Vector2(r, y));
   const mould = new THREE.Mesh(new THREE.LatheGeometry(mouldPts, 128), ironMat);
   mould.material.side = THREE.DoubleSide;
   forge.add(mould);

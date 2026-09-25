@@ -262,7 +262,20 @@ function player(film, chain, hg, hud, W, H) {
   });
 }
 
+const VIDEO_URL = 'https://github.com/sene1337/cant-print-the-proof/releases/latest';
+
 boot().catch((e) => {
   console.error(e);
   window.__error = String(e && e.stack || e);
+  if (CAPTURE) return;
+  // No live film on this device (no WebGL2, or it failed): offer the video file instead.
+  const label = document.getElementById('playLabel');
+  const btn = document.getElementById('play');
+  const fine = document.getElementById('fine');
+  if (btn && label) {
+    label.textContent = 'Watch the video file';
+    btn.disabled = false;
+    btn.addEventListener('click', () => { location.href = VIDEO_URL; });
+  }
+  if (fine) fine.textContent = 'This browser can’t draw the film live, so here is the rendered version.';
 });
