@@ -4,8 +4,9 @@
 import { orbitCam, moveCam } from '../film.js';
 import { clamp, lerp, smooth, easeOut, easeIn, easeInOut, easeOutBack, pulse, range, hash1 } from '../util.js';
 import { NOTE } from '../props/notes.js';
+import { monumentStage } from '../stages/monument.js';
 
-export const stages = {};
+export const stages = { monument: monumentStage };
 
 export function shots(S, T) {
   chorus(S, T, 1, T.wordAfter('stroke', 30).s, T.wordAfter('so', 49).s);
@@ -22,7 +23,7 @@ const PEN_X = norm([PEN_A[1] * PEN_Z[2] - PEN_A[2] * PEN_Z[1], PEN_A[2] * PEN_Z[
 
 // Print grid layout for 2^k notes: a perfect rectangle whose shape alternates with k.
 function gridDims(k) {
-  const cols = Math.pow(2, Math.ceil(k / 2)), rows = Math.pow(2, Math.floor(k / 2));
+  const cols = Math.pow(2, Math.floor(k / 2)), rows = Math.pow(2, Math.ceil(k / 2));
   return { cols, rows, w: cols * (NOTE.W + 0.08), h: rows * (NOTE.H + 0.08) };
 }
 function gridPos(i, k) {
@@ -68,7 +69,7 @@ function chorus(S, T, n, t0, tEnd) {
     (s, c) => {
       s.desk.visible = true; s.lamp.visible = true;
       const p = s.drawInk(kWide(c.t));
-      s.pen.visible = true; s.posePen(s.pen, p, PEN_AXIS); s.pen.scale.setScalar(0.42);
+      s.pen.visible = true; s.posePen(s.pen, p, PEN_AXIS); s.pen.scale.setScalar(0.62);
       s.dust.visible = false;
     }, { bloom: 0.55, threshold: 1.0, bloomRadius: 0.3 });
 
@@ -92,13 +93,19 @@ function chorus(S, T, n, t0, tEnd) {
       });
     }, { bloom: 0.5, threshold: 1.0, bloomRadius: 0.3 });
 
-  // 4. Turned all your hours: the clock runs faster and faster.
-  C(tTurned, 'paper', orbitCam({ target: [0, 0, 0], dist: [6.4, 5.4], az: n === 2 ? [10, 4] : [-12, -4], el: [4, 2], roll: n === 2 ? [-6, -2] : 0, fov: 32 }),
+  // 4. Turned all your hours: the clock runs faster and faster. Chorus 2 is a gold pocket watch on its chain;
+  //    chorus 3 looks up at the clock from below while the storm is already rising around it.
+  const clockCam = n === 2 ? orbitCam({ target: [0, 0.6, 0], dist: [8.2, 6.6], az: [24, 14], el: [-4, 2], roll: [-8, -3], fov: 32 })
+    : n === 3 ? orbitCam({ target: [0, 0.4, 0], dist: [7.6, 6.2], az: [-8, 6], el: [-22, -16], fov: 34 })
+      : orbitCam({ target: [0, 0, 0], dist: [6.4, 5.4], az: [-12, -4], el: [4, 2], fov: 32 });
+  C(tTurned, 'paper', clockCam,
     (s, c) => {
       s.clock.visible = true;
-      const spin = c.lt * c.lt * (n === 2 ? 3.2 : 1.8);
+      if (n === 2) { s.watch.visible = true; s.clock.rotation.set(0.12, -0.25, 0.05); }
+      const spin = c.lt * c.lt * (n === 1 ? 1.8 : 3.4);
       s.minHand.rotation.z = -spin * 6;
       s.hourHand.rotation.z = -spin * 0.5;
+      if (n === 3) { s.cloud.visible = true; s.storm(c.t, { n: 1800, radius: 9, height: 7, wind: [1.5, 1.2, 0.3], scale: 0.9 }); }
     }, { aperture: 0.00012, focus: 5.6, maxblur: 0.006 });
 
   // 5. Into paper and wind: the clock bursts into notes that blow away.
@@ -165,66 +172,91 @@ function chorus(S, T, n, t0, tEnd) {
     s.key.intensity = 2.6;
   }, { bloom: 0.35, threshold: 1.0, shake: 0.002 });
 
-  // 8. They can't print the proof. Chorus 1: one block, one failed copy. Chorus 2: two copies fail at once.
-  //    Chorus 3: the chain itself, and the copy fails at its head.
+  // 8. They can't print the proof. A printer's copy of the block comes out as a paper box and collapses.
+  //    Chorus 1: one copy. Chorus 2: two at once. Chorus 3: the block is the head of the chain.
+  const tMillion = w('million.');
+  const tryK = (t) => clamp((t - tPrint2 + 0.18) / Math.max(0.6, tProof - tPrint2 + 0.55));
   if (n < 3) {
-    C(tCant - 0.26, 'proof', orbitCam({ target: [0.45, 0, 0], dist: [3.6, 3.0], az: n === 2 ? [18, 6] : [-24, -8], el: [14, 10], fov: 32 }),
+    C(tCant - 0.26, 'proof', orbitCam({ target: [0.55, 0.1, 0], dist: [4.1, 3.5], az: n === 2 ? [10, 2] : [-26, -14], el: [12, 9], fov: 32 }),
       (s, c) => {
-        s.block.rotation.set(0.2, c.t * 0.25, 0);
-        const k = clamp((c.t - tPrint2 + 0.1) / 0.9);
-        s.ghostAt(k, [1.35, 0, 0], 1);
-        if (n === 2) s.ghostAt(clamp(k * 1.08), [-1.35, 0.1, 0], 2);
-        s.block.setGlow(1 + 1.2 * pulse(c.t - tProof, 3) * (c.t > tProof ? 1 : 0));
-      }, { bloom: 0.9, threshold: 0.8 });
+        const h = s.hero(n);
+        h.rotation.set(0, n === 2 ? -0.25 : 0.35, 0);
+        const k = tryK(c.t);
+        s.paperAt(n === 2 ? 1 : 0, k, [0, 0, 0], [1.4, 0, 0.1], 0.3);
+        if (n === 2) s.paperAt(3, clamp(k * 1.06), [0, 0, 0], [-1.4, 0, 0.15], -0.3);
+        h.setGlow(1 + 1.1 * (c.t > tProof ? pulse(c.t - tProof, 2.6) : 0));
+      }, { bloom: 0.6, threshold: 1.0 });
   } else {
-    C(tCant - 0.26, 'proof', moveCam({ from: [3.2, 1.6, 4.2], to: [1.8, 1.0, 3.4], look: [-3, 0, 0], look2: [-1.2, 0, 0], fov: 34 }),
+    C(tCant - 0.26, 'proof', moveCam({ from: [3.4, 1.4, 4.0], to: [2.2, 0.9, 3.3], look: [-3.2, 0, 0], look2: [-1.4, 0, 0], fov: 34 }),
       (s, c) => {
-        s.block.visible = false;
         s.chainGroup.visible = true;
         s.chainGroup.rotation.y = 0.12;
-        s.chainBlocks[0].setGlow(1 + 1.2 * pulse(c.t - tProof, 3) * (c.t > tProof ? 1 : 0));
-        s.ghostAt(clamp((c.t - tPrint2 + 0.1) / 0.9), [1.5, 0, 0], 1);
-      }, { bloom: 0.9, threshold: 0.8 });
+        s.floor.visible = true;
+        s.paperAt(2, tryK(c.t), [0, 0, 0], [1.55, 0, 0.2], 0.25);
+        s.chainBlocks[0].setGlow(1 + 1.1 * (c.t > tProof ? pulse(c.t - tProof, 2.6) : 0));
+      }, { bloom: 0.6, threshold: 1.0 });
   }
 
-  // 9. Twenty-one million: pull back from one light to all of them.
-  const pull = (c) => clamp((c.t - t21) / (tTruth - t21 + 0.2));
-  C(t21, 'proof', (c, cam) => {
-    const g = c.film.stages.get('proof');
-    const u = easeInOut(pull(c));
-    const [hx, hy] = g.lightPos(2500, 2100);
-    const d = Math.exp(lerp(Math.log(5), Math.log(n === 2 ? 5200 : 7600), u));
-    const tx = lerp(hx, 0, u), ty = lerp(hy, 0, u);
-    if (n === 2) {
-      // Chorus 2: skim low over the lights before rising.
-      cam.position.set(tx + d * 0.1, ty - d * 0.9, d * 0.45 + 2);
-      cam.lookAt(tx, ty + d * 0.15, 0);
-    } else {
-      cam.position.set(tx + d * 0.08, ty - d * 0.22, d);
-      cam.lookAt(tx, ty, 0);
-    }
-    cam.fov = 40; cam.near = Math.max(0.05, d * 0.01); cam.far = d * 6;
-  }, (s, c) => {
-    s.block.visible = false;
-    s.grid.visible = true;
-    s.edge.visible = pull(c) > 0.5;
-    s.grid.set(c.t, { hero: 3 * (1 - pull(c)), gain: 1.4, far: 0.7 });
-    s.dust.visible = false;
-  }, { bloom: 0.45, threshold: 1.0, bloomRadius: 0.25, shake: 0.001 });
-
-  // 10. That's the truth: the whole supply, finite, with an edge.
-  C(tTruth, 'proof', (c, cam) => {
-    const d = 7900 + c.lt * 250;
-    cam.position.set(d * 0.08, -d * 0.22 - 750, d);
-    cam.lookAt(0, -750, 0);
-    cam.fov = 40; cam.near = 10; cam.far = 60000;
-  }, (s, c) => {
-    s.block.visible = false;
-    s.grid.visible = true; s.edge.visible = true; s.label.visible = true;
-    s.label.material.opacity = clamp(c.lt / 0.5);
-    s.grid.set(c.t, { hero: 0, gain: 2.0, far: 0.5 });
-    s.dust.visible = false;
-  }, { bloom: 0.7, threshold: 0.9, shake: 0.001 });
+  // 9-10. Twenty-one million. That's the truth. The number itself, cast in metal.
+  if (n === 1) {
+    // "Twenty-one": 2 and 1 rise out of the floor.
+    const rise = (t, t0, i) => easeOutBack(clamp((t - t0 - i * 0.12) / 0.55), 1.4);
+    C(t21, 'monument', orbitCam({ target: (c) => { const p = c.film.stages.get('monument').parts; const x = (p[0].userData.x0 + p[1].userData.x0 + p[1].userData.w) / 2; return [x, 0.8, 0]; }, dist: [6.2, 5.2], az: [-18, -8], el: [6, 4], fov: 30 }),
+      (s, c) => {
+        s.parts.forEach((p, i) => { p.visible = i < 2; });
+        for (let i = 0; i < 2; i++) s.parts[i].position.y = -3.1 + 3.1 * rise(c.t, t21 - 0.05, i);
+      }, { bloom: 0.45 });
+    // "million": the ,000,000 slam down in three strikes; the camera pulls back to take in the whole number.
+    const beat = (T.beats[T.beatIndex(tMillion) + 1] - T.beats[T.beatIndex(tMillion)]);
+    const drop = (t, t0) => { const u = clamp((t - t0) / 0.32); return 1 - u * u; };
+    C(tMillion, 'monument', orbitCam({ target: [0, 0.9, 0], dist: [11, 15.5], az: [-10, 0], el: [8, 10], fov: 32, ease: (x) => easeOut(x, 2) }),
+      (s, c) => {
+        const groups = [[2, 3, 4, 5], [6, 7], [8, 9]];
+        groups.forEach((g, gi) => g.forEach((i) => { s.parts[i].position.y = 3.2 * drop(c.t, tMillion + gi * beat * 0.5); }));
+        const shake = pulse(c.t - tMillion, 10) + pulse(c.t - tMillion - beat * 0.5, 10) + pulse(c.t - tMillion - beat, 10);
+        s.numerals.position.y = -shake * 0.02;
+      }, { bloom: 0.45, punch: 2.5 });
+    // "That's the truth": a light passes across the face.
+    C(tTruth, 'monument', orbitCam({ target: [0, 0.8, 0], dist: [12.5, 11.5], az: [4, 8], el: [5, 6], fov: 32 }),
+      (s, c) => {
+        const u = clamp((c.t - tTruth) / 1.1);
+        s.sweep.intensity = 260; s.sweep.position.set(-9 + u * 18, 5, 7); s.sweep.target.position.set(-7 + u * 14, 0.8, 0);
+      }, { bloom: 0.55 });
+  } else if (n === 2) {
+    // The storm is thrown at the number and falls away.
+    C(t21, 'monument', orbitCam({ target: [0, 1.3, 0], dist: [14, 12], az: [26, 16], el: [7, 6], fov: 34 }),
+      (s, c) => {
+        s.storm(c.t, t21 - 0.6, { n: 560, speed: 11 });
+        s.rim.color.setRGB(1, 0.3, 0.2); s.rim.intensity = 3;
+      }, { bloom: 0.45, tint: [1.08, 0.95, 0.92] });
+    C(tTruth, 'monument', orbitCam({ target: [0, 0.8, 0], dist: [9.5, 8.5], az: [-6, -2], el: [4, 5], fov: 32 }),
+      (s, c) => {
+        s.storm(c.t, t21 - 0.6, { n: 560, speed: 11 });
+        const u = clamp((c.t - tTruth) / 1.2);
+        s.sweep.intensity = 240; s.sweep.position.set(9 - u * 18, 5, 7); s.sweep.target.position.set(7 - u * 14, 0.8, 0);
+      }, { bloom: 0.55 });
+  } else {
+    // At world scale, at dawn: the camera rises past the number as the sun comes up behind it.
+    C(t21, 'monument', (c, cam) => {
+      const u = easeInOut(clamp((c.t - t21) / (tEnd - t21)));
+      cam.position.set(lerp(-10, 6, u), lerp(2.2, 20, u), lerp(26, 52, u));
+      cam.lookAt(0, lerp(4.5, 3.5, u), 0);
+      cam.fov = 38; cam.far = 3000;
+    }, (s, c) => {
+      s.numerals.scale.setScalar(3.2);
+      s.numerals.position.y = s.BASE * 3.2;
+      s.sky.visible = true; s.sun.visible = true;
+      const glow = clamp((c.t - tTruth) / 1.0);
+      s.dawnLight.intensity = 1.2 + glow;
+      s.scene.fog.density = 0.006;
+      s.scene.background.setRGB(0.01, 0.01, 0.03);
+      s.scene.environmentIntensity = 0.8;
+      s.key.position.set(-14, 18, 30); s.key.target.position.set(0, 4, 0); s.key.intensity = 900; s.key.distance = 120; s.key.angle = 0.5;
+      s.rim.intensity = 1.6;
+      s.sun.material.color.setRGB(1.6 + glow, 1.2 + glow * 0.7, 0.9 + glow * 0.4);
+      s.dust.visible = false;
+    }, { bloom: 0.4, threshold: 1.1, tint: [1.03, 0.99, 0.94] });
+  }
 
   // Keep only shots that last long enough to read, and never past the chorus end.
   cuts.sort((a, b) => a.t - b.t);

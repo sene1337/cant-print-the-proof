@@ -6,7 +6,8 @@ import { studioEnv, orbitCam, moveCam } from '../film.js';
 import { Coin } from '../props/coin.js';
 import { Block, link } from '../props/block.js';
 import { Dust } from '../props/dust.js';
-import { coinFace, edgeText, banknote, textCard } from '../tex.js';
+import { cowrie as v1Cowrie } from '../props/verse1-cowrie.js';
+import { coinFace, edgeText, banknote, textCard, loadImage, TEX } from '../tex.js';
 import { clamp, lerp, smooth, easeOut, easeIn, easeInOut, easeOutBack, pulse, range, hash1 } from '../util.js';
 
 export const SITE_URL = 'sene1337.github.io/cant-print-the-proof';
@@ -90,9 +91,26 @@ async function turntable(film) {
   hero.position.set(0, 1.9, 0);
   scene.add(hero);
 
-  const shell = cowrie();
-  shell.scale.setScalar(0.62);
-  const coin = new Coin({ radius: 0.62, thickness: 0.1, face: await coinFace('stater'), metal: 'gold', edge: edgeText("CAN'T PRINT THE PROOF"), seed: 31 });
+  // The moon from verse 1, low behind the pedestal.
+  const moonTex = new THREE.Texture(await loadImage(`${TEX.base}tex/moon.jpg`));
+  moonTex.colorSpace = THREE.SRGBColorSpace; moonTex.needsUpdate = true;
+  const moon = new THREE.Mesh(new THREE.CircleGeometry(7, 96), new THREE.MeshBasicMaterial({ map: moonTex, color: new THREE.Color(1.15, 1.12, 1.05), fog: false }));
+  moonTex.center.set(0.5, 0.5);
+  moon.position.set(0, 3.4, -40);
+  scene.add(moon);
+  const starGeo = new THREE.BufferGeometry();
+  const sp = new Float32Array(900 * 3);
+  for (let i = 0; i < 900; i++) {
+    const a = hash1(i * 3) * Math.PI - Math.PI / 2, e = hash1(i * 3 + 1) * 0.9 + 0.05, r = 60;
+    sp[i * 3] = Math.sin(a) * Math.cos(e) * r; sp[i * 3 + 1] = Math.sin(e) * r; sp[i * 3 + 2] = -Math.cos(a) * Math.cos(e) * r;
+  }
+  starGeo.setAttribute('position', new THREE.BufferAttribute(sp, 3));
+  const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({ size: 0.12, color: new THREE.Color(1.4, 1.35, 1.25), fog: false, sizeAttenuation: true }));
+  scene.add(stars);
+
+  // The same cowrie that opens verse 1, so the film ends where it began.
+  const shell = v1Cowrie({ length: 1.35 });
+  const coin = new Coin({ radius: 0.62, thickness: 0.1, face: await coinFace('stater'), metal: 'gold', edge: edgeText('CAN’T PRINT THE PROOF'), seed: 31 });
   const noteTex = await banknote({ seed: 5 });
   const noteGeo = new THREE.PlaneGeometry(2.1, 0.9, 24, 6);
   const np = noteGeo.attributes.position;
@@ -100,7 +118,7 @@ async function turntable(film) {
   noteGeo.computeVertexNormals();
   const note = new THREE.Mesh(noteGeo, new THREE.MeshStandardMaterial({ map: noteTex, side: THREE.DoubleSide, roughness: 0.8 }));
   const last = film.chain.block(film.chain.n - 1);
-  const block = new Block({ hash: last.hash, height: '#' + last.i.toLocaleString('en-US'), nonce: last.nonce, label: 'FRAME BLOCK' });
+  const block = new Block({ hash: last.hash, height: '#' + last.i.toLocaleString('en-US'), nonce: last.nonce, style: 'engraved' });
   block.scale.setScalar(0.95);
   const forms = [shell, coin, note, block];
   forms.forEach((f) => hero.add(f));
@@ -109,7 +127,7 @@ async function turntable(film) {
   const chain = new THREE.Group();
   for (let i = 1; i <= 24; i++) {
     const b = film.chain.block(film.chain.n - 1 - i * 23);
-    const k = new Block({ hash: b.hash, height: '#' + b.i.toLocaleString('en-US'), nonce: b.nonce, label: 'FRAME BLOCK' });
+    const k = new Block({ hash: b.hash, height: '#' + b.i.toLocaleString('en-US'), nonce: b.nonce, style: 'engraved' });
     k.scale.setScalar(0.95);
     k.position.set(0, 0, -i * 1.8);
     chain.add(k);
@@ -130,15 +148,15 @@ async function turntable(film) {
 
   // End card: title and where to verify, on black.
   const card = new THREE.Group();
-  const title = new THREE.Mesh(new THREE.PlaneGeometry(6, 0.9),
-    new THREE.MeshBasicMaterial({ map: textCard("CAN'T PRINT THE PROOF", { w: 2048, h: 300, font: '600 170px "Cormorant Garamond"', color: '#f1c77a' }), transparent: true, depthWrite: false }));
-  title.position.set(0, 0.55, 0);
-  const line1 = new THREE.Mesh(new THREE.PlaneGeometry(6, 0.42),
-    new THREE.MeshBasicMaterial({ map: textCard('Every frame of this film is a mined block.', { w: 2048, h: 144, font: '500 66px "Figtree"', color: '#efe7d8' }), transparent: true, depthWrite: false }));
-  line1.position.set(0, -0.28, 0);
-  const line2 = new THREE.Mesh(new THREE.PlaneGeometry(6, 0.42),
-    new THREE.MeshBasicMaterial({ map: textCard(`Verify it yourself: ${SITE_URL}`, { w: 2048, h: 144, font: '500 56px "JetBrains Mono"', color: '#f7931a' }), transparent: true, depthWrite: false }));
-  line2.position.set(0, -0.78, 0);
+  const title = new THREE.Mesh(new THREE.PlaneGeometry(7.2, 1.05),
+    new THREE.MeshBasicMaterial({ map: textCard('CAN’T PRINT THE PROOF', { w: 2048, h: 300, font: '600 180px "Cormorant Garamond"', color: '#f1c77a' }), transparent: true, depthWrite: false }));
+  title.position.set(0, 0.75, 0);
+  const line1 = new THREE.Mesh(new THREE.PlaneGeometry(7.2, 0.6),
+    new THREE.MeshBasicMaterial({ map: textCard('Every frame of this film is a mined block.', { w: 2048, h: 170, font: '500 92px "Figtree"', color: '#efe7d8' }), transparent: true, depthWrite: false }));
+  line1.position.set(0, -0.25, 0);
+  const line2 = new THREE.Mesh(new THREE.PlaneGeometry(7.2, 0.6),
+    new THREE.MeshBasicMaterial({ map: textCard(SITE_URL, { w: 2048, h: 170, font: '600 92px "JetBrains Mono"', color: '#f7931a' }), transparent: true, depthWrite: false }));
+  line2.position.set(0, -0.95, 0);
   card.add(title, line1, line2);
   for (const m of [title, line1, line2]) { m.material.fog = false; m.material.toneMapped = false; }
   scene.add(card);
@@ -147,7 +165,7 @@ async function turntable(film) {
   scene.add(dust);
 
   return {
-    scene, hero, forms, shell, coin, note, block, chain, ring, card, title, line1, line2, pedestal, lip, top, rim, dust,
+    scene, hero, forms, shell, coin, note, block, chain, ring, card, title, line1, line2, pedestal, lip, top, rim, dust, moon, stars,
     fx: { bloom: 0.45, threshold: 1.0, bloomRadius: 0.4, grain: 0.04, vignette: 0.55 },
     show(i, k = 1) { forms.forEach((f, j) => { f.visible = j === i; }); forms[i].scale.multiplyScalar(k); },
     burst(t, t0) {
@@ -164,7 +182,8 @@ async function turntable(film) {
     },
     update(ctx) {
       forms.forEach((f) => { f.visible = false; f.rotation.set(0, 0, 0); });
-      shell.scale.setScalar(0.62); coin.scale.setScalar(1); note.scale.setScalar(1); block.scale.setScalar(0.95);
+      shell.scale.setScalar(1.35);
+      moon.visible = true; stars.visible = true; coin.scale.setScalar(1); note.scale.setScalar(1); block.scale.setScalar(0.95);
       block.setGlow(1);
       hero.position.set(0, 1.9, 0);
       hero.rotation.set(0, ctx.t * 0.5, 0);
@@ -188,11 +207,17 @@ export function shots(S, T) {
   const tCard = 181.4;
 
   // Anticipation: an empty pedestal in the dark, one light. Then the forms, one per word.
-  S(172.6, 'outro-turntable', orbitCam({ target: [0, 1.75, 0], dist: [8.5, 3.9], az: [-30, -8], el: [14, 9], fov: 30, ease: (x) => easeOut(x, 2) }),
+  S(172.6, 'outro-turntable', (c, cam) => {
+    // Night again. Start tight on the moon, then pull back to find the pedestal in front of it.
+    const u = easeInOut(clamp((c.t - 172.6) / (tShell - 172.6)));
+    cam.position.set(lerp(0.6, -1.2, u), lerp(2.9, 2.55, u), lerp(7.5, 4.3, u));
+    cam.lookAt(0, lerp(3.35, 1.8, u), lerp(-40, 0, u));
+    cam.fov = lerp(9, 30, u);
+  },
     (s, c) => {
       const t = c.t;
       const pop = (t0) => easeOutBack(clamp((t - t0 + 0.06) / 0.28), 2.2);
-      s.top.intensity = 18 * clamp((t - 172.6) / 1.2);
+      s.top.intensity = 18 * clamp((t - 173.6) / 1.4);
       if (t >= tI) {
         let i = 0, t0 = tI;
         if (t >= tGold - 0.05) { i = 1; t0 = tGold - 0.05; }
@@ -216,7 +241,7 @@ export function shots(S, T) {
       s.block.setGlow(1.2);
       s.chain.visible = true;
       s.chain.children.forEach((k, i) => { k.visible = c.lt > i * 0.05; });
-      s.pedestal.visible = false; s.lip.visible = false;
+      s.pedestal.visible = false; s.lip.visible = false; s.moon.visible = false;
       s.top.intensity = 4;
     }, { bloom: 0.3, threshold: 1.1, fadeOut: 0.5 });
   // End card.
@@ -228,7 +253,7 @@ export function shots(S, T) {
     cam.fov = 36;
   }, (s, c) => {
     s.forms.forEach((f) => { f.visible = false; });
-    s.pedestal.visible = false; s.lip.visible = false; s.dust.visible = false;
+    s.pedestal.visible = false; s.lip.visible = false; s.dust.visible = false; s.moon.visible = false; s.stars.visible = false;
     s.card.visible = true;
     s.card.position.set(0, 20, 0);
     s.title.material.opacity = clamp(c.lt / 0.6);

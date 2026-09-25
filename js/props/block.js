@@ -1,7 +1,7 @@
 // A proof block: a dark cube with its hash engraved in light on every face.
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { blockFace } from '../tex.js';
+import { blockFace, blockFaceEngraved } from '../tex.js';
 
 const faceCache = new Map();
 function face(hash, height, nonce, label) {
@@ -13,8 +13,23 @@ function face(hash, height, nonce, label) {
 const GEO = new RoundedBoxGeometry(1, 1, 1, 4, 0.05);
 
 export class Block extends THREE.Group {
-  constructor({ hash, height, nonce, label = 'BLOCK', glow = 2.2 }) {
+  constructor({ hash, height, nonce, label = 'BLOCK', glow = 2.2, style = 'neon' }) {
     super();
+    if (style === 'engraved') {
+      // Dark bronze, the numbers cut into every face and lit from inside the cuts.
+      const f = blockFaceEngraved({ hash, height, nonce, label });
+      this.mat = new THREE.MeshPhysicalMaterial({
+        map: f.color, normalMap: f.normal, normalScale: new THREE.Vector2(1.4, 1.4),
+        metalness: 0.85, roughness: 0.36, clearcoat: 0.5, clearcoatRoughness: 0.2,
+        emissive: new THREE.Color(1, 1, 1), emissiveMap: f.emissive, emissiveIntensity: 1.4,
+      });
+      this.mesh = new THREE.Mesh(GEO, this.mat);
+      this.mesh.castShadow = true;
+      this.add(this.mesh);
+      this.edges = { material: { opacity: 0 } };
+      this.baseGlow = 1.4;
+      return;
+    }
     const t = face(hash, height, nonce, label);
     this.mat = new THREE.MeshPhysicalMaterial({
       color: new THREE.Color(0.02, 0.016, 0.012), metalness: 0.7, roughness: 0.28,
@@ -34,7 +49,7 @@ export class Block extends THREE.Group {
   }
   setGlow(k) {
     this.mat.emissiveIntensity = this.baseGlow * k;
-    this.edges.material.opacity = Math.min(1, 0.9 * k);
+    if (this.edges.isLineSegments) this.edges.material.opacity = Math.min(1, 0.9 * k);
   }
 }
 

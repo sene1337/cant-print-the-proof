@@ -38,12 +38,12 @@ function tileTexture(txt) {
 }
 
 function rimText() {
-  const c = canvas(2048, 128), g = c.getContext('2d');
-  g.fillStyle = '#000'; g.fillRect(0, 0, 2048, 128);
+  const c = canvas(2048, 384), g = c.getContext('2d');
+  g.fillStyle = '#000'; g.fillRect(0, 0, 2048, 384);
   g.fillStyle = '#ffb347'; g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.font = '700 84px "Figtree"';
-  g.fillText('21,000,000', 1024, 68);
-  return canvasTex(c);
+  g.font = '700 300px "Cormorant Garamond"';
+  g.fillText('21,000,000', 1024, 200);
+  return canvasTex(c, { aniso: 16 });
 }
 
 export async function verse3HalvingStage(film) {
@@ -114,8 +114,15 @@ export async function verse3HalvingStage(film) {
   const edgeLines = [[TRAY, 0.02, 0, -TRAY / 2], [TRAY, 0.02, 0, TRAY / 2], [0.02, TRAY, -TRAY / 2, 0], [0.02, TRAY, TRAY / 2, 0]].map(([w, d, x, z]) => {
     const m = new THREE.Mesh(new THREE.BoxGeometry(w + 0.02, 0.02, d + 0.02), edgeMat); m.position.set(x, 0.12 + wallH + 0.001, z); tray.add(m); return m;
   });
-  const rimLabel = new THREE.Mesh(new THREE.PlaneGeometry(TRAY, TRAY / 16), new THREE.MeshBasicMaterial({ map: rimText(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, color: new THREE.Color(1.3, 1.3, 1.3) }));
-  rimLabel.position.set(0, 0.12 + wallH / 2, (TRAY + wallT) / 2 + wallT / 2 + 0.003);
+  // A wide ledge along the front carries the total, engraved large and lit, facing up at the camera.
+  const LEDGE_D = 1.05;
+  const ledge = new THREE.Mesh(new THREE.BoxGeometry(TRAY + 0.5, 0.26, LEDGE_D), steel);
+  ledge.position.set(0, 0.13, TRAY / 2 + wallT + LEDGE_D / 2);
+  ledge.castShadow = ledge.receiveShadow = true;
+  tray.add(ledge);
+  const rimLabel = new THREE.Mesh(new THREE.PlaneGeometry(3.9, 3.9 * 384 / 2048), new THREE.MeshBasicMaterial({ map: rimText(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, color: new THREE.Color(1.25, 1.25, 1.25) }));
+  rimLabel.rotation.x = -Math.PI / 2;
+  rimLabel.position.set(0, 0.262, TRAY / 2 + wallT + LEDGE_D / 2);
   tray.add(rimLabel);
 
   // Tiles: halve what is left, alternating direction, toward the front-right corner.

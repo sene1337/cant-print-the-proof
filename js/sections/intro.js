@@ -51,7 +51,6 @@ export function shots(S, T) {
     });
   // 7. Settled. Push in, then black.
   S(8.533, 'gold', orbitCam({ target: [0, 0.09, 0], dist: [2.6, 2.0], az: [0, 20], el: [80, 88], fov: 30 }),
-    (s, c) => { s.coin.position.set(0, 0.09, 0); s.coin.rotation.set(-Math.PI / 2, 0, -0.3 - c.lt * 0.1); },
-    { fadeOut: 0.3 });
+    (s, c) => { s.coin.position.set(0, 0.09, 0); s.coin.rotation.set(-Math.PI / 2, 0, -0.3 - c.lt * 0.1); });
 
 }

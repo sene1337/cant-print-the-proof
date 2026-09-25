@@ -338,6 +338,71 @@ export function blockFace({ hash, height, nonce, w = 512, label = 'BLOCK' } = {}
   return tex(c);
 }
 
+// The same face as physical maps for an engraved block: dark bronze, letters cut in and lit from inside the grooves.
+// Returns { color, normal, emissive } (cached per block).
+const ENGRAVED = new Map();
+function drawFaceLayout(g, w, { hash, height, nonce, label }, ink) {
+  g.strokeStyle = ink.frame; g.lineWidth = w * 0.014; g.strokeRect(w * 0.06, w * 0.06, w * 0.88, w * 0.88);
+  g.fillStyle = ink.label;
+  g.font = `700 ${Math.round(w * 0.055)}px "Figtree"`; g.textAlign = 'left'; g.textBaseline = 'alphabetic';
+  g.fillText(label, w * 0.11, w * 0.18);
+  g.fillStyle = ink.number;
+  g.font = `800 ${Math.round(w * 0.19)}px "Figtree"`;
+  g.fillText(height, w * 0.1, w * 0.385);
+  g.font = `700 ${Math.round(w * 0.056)}px "JetBrains Mono"`;
+  let zeros = hash.match(/^0*/)[0].length;
+  hexLines(hash).forEach((ln, i) => {
+    let x = w * 0.11;
+    const y = w * 0.53 + i * w * 0.078;
+    for (const ch of ln) {
+      g.fillStyle = zeros > 0 ? ink.zero : ink.hex;
+      g.fillText(ch, x, y);
+      x += w * 0.049;
+      if (zeros > 0) zeros--;
+    }
+  });
+  if (nonce != null) {
+    g.fillStyle = ink.hex;
+    g.font = `700 ${Math.round(w * 0.042)}px "JetBrains Mono"`;
+    g.fillText(`NONCE ${Number(nonce).toLocaleString('en-US')}`, w * 0.11, w * 0.885);
+  }
+}
+export function blockFaceEngraved({ hash, height, nonce, w = 1024, label = 'BLOCK' } = {}) {
+  const key = `${hash}|${height}|${label}|${w}`;
+  if (ENGRAVED.has(key)) return ENGRAVED.get(key);
+  const info = { hash, height, nonce, label };
+  // height: grooves are dark (low)
+  const h = canvas(w, w), hg = h.getContext('2d');
+  hg.fillStyle = '#c8c8c8'; hg.fillRect(0, 0, w, w);
+  drawFaceLayout(hg, w, info, { frame: '#3a3a3a', label: '#3a3a3a', number: '#3a3a3a', zero: '#3a3a3a', hex: '#3a3a3a' });
+  // light inside the grooves
+  const e = canvas(w, w), eg = e.getContext('2d');
+  eg.fillStyle = '#000'; eg.fillRect(0, 0, w, w);
+  drawFaceLayout(eg, w, info, { frame: '#5a2c08', label: '#e07a1e', number: '#f08a22', zero: '#ffb04a', hex: '#b85c16' });
+  // bronze surface with a little wear
+  const c = canvas(w, w), cg = c.getContext('2d');
+  const R = rng(hash.length + parseInt(hash.slice(-6), 16) % 9973);
+  cg.fillStyle = '#2a1d14'; cg.fillRect(0, 0, w, w);
+  for (let i = 0; i < 900; i++) {
+    cg.fillStyle = `rgba(${90 + R() * 60},${60 + R() * 40},${30 + R() * 20},${R() * 0.12})`;
+    cg.fillRect(R() * w, R() * w, R() * 40 + 4, R() * 2 + 1);
+  }
+  drawFaceLayout(cg, w, info, { frame: '#120b06', label: '#120b06', number: '#120b06', zero: '#120b06', hex: '#120b06' });
+  const out = { color: tex(c), normal: normalFromHeight(h, 2.2, 1.2), emissive: tex(e) };
+  ENGRAVED.set(key, out);
+  return out;
+}
+
+// The block face printed on paper: the look of proof without the work.
+export function blockFacePaper({ hash, height, nonce, w = 512, label = 'BLOCK' } = {}) {
+  const c = canvas(w, w), g = c.getContext('2d');
+  const R = rng(7);
+  g.fillStyle = '#ece8dc'; g.fillRect(0, 0, w, w);
+  for (let i = 0; i < 1200; i++) { g.fillStyle = `rgba(60,55,40,${R() * 0.05})`; g.fillRect(R() * w, R() * w, 2, 1); }
+  drawFaceLayout(g, w, { hash, height, nonce, label }, { frame: '#6a6660', label: '#6a6660', number: '#5e5a54', zero: '#8a857c', hex: '#8a857c' });
+  return tex(c);
+}
+
 // Emissive mask for the same face (bright where the orange lines and digits are).
 export function glowFrom(t) { return t; }
 
@@ -346,6 +411,12 @@ export function textCard(lines, { w = 1024, h = 256, font = '600 64px "Figtree"'
   if (bg) { g.fillStyle = bg; g.fillRect(0, 0, w, h); }
   g.fillStyle = color; g.font = font; g.textAlign = align; g.textBaseline = 'middle';
   const arr = Array.isArray(lines) ? lines : [lines];
+  // Shrink the font if a line would overflow the canvas.
+  const widest = Math.max(...arr.map((ln) => g.measureText(ln).width));
+  if (widest > w * 0.96) {
+    const m = font.match(/(\d+(?:\.\d+)?)px/);
+    if (m) g.font = font.replace(m[0], `${Math.floor(Number(m[1]) * (w * 0.96) / widest)}px`);
+  }
   const lh = h / (arr.length + 0.5);
   arr.forEach((ln, i) => g.fillText(ln, align === 'center' ? w / 2 : 20, lh * (i + 0.75)));
   return tex(c);

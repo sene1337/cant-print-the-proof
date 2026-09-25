@@ -153,7 +153,7 @@ export async function verse3GenesisStage(film) {
     // Birth: tSpark a point of light; tEdges the outline traces; tFaces the faces scan in; tGlow full power.
     birth(t, { tSpark, tEdges, tFaces, tGlow }) {
       const sp = clamp((t - tSpark) / 0.15);
-      const ek = (t - tEdges) / 0.24; // edge units done
+      const ek = (t - tEdges) / 0.3; // edge units done (one corner-to-corner run per 0.3 s)
       spark.visible = t > tSpark && t < tFaces + 0.3;
       tmp.copy(start).multiplyScalar(GS);
       spark.position.copy(tmp);

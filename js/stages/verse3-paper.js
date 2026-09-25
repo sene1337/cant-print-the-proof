@@ -132,16 +132,20 @@ export async function verse3PaperStage(film) {
   WALLS.forEach(({ k, f }, j) => {
     const u = V(0, 1, 0), n = f.clone(), r = u.clone().cross(n);
     const lift = j * 0.0025;
-    cubePose[k] = { pos: f.clone().multiplyScalar(0.506 + j * 0.001).add(V(0, PH / 2 + lift, 0)), quat: basisQuat(r, u, n), fold: { at: CREASE_WALL, side: 1 } };
+    const pos = f.clone().multiplyScalar(0.506 + j * 0.001).add(V(0, PH / 2 + lift, 0));
+    // stand upright outside the face first, then slide straight in: no page cuts through another
+    cubePose[k] = { pos, stage: pos.clone().addScaledVector(f, 1.1), quat: basisQuat(r, u, n), fold: { at: CREASE_WALL, side: 1 } };
   });
   BASE.forEach((k, j) => {
-    const a = j * 0.9 + 0.3;
+    // flat, nearly square to the cube, small enough to sit inside the walls (0.70 x 0.91)
+    const a = (j % 2) * Math.PI / 2 + (j - 1.5) * 0.06;
     const u = V(Math.sin(a), 0, Math.cos(a)), n = V(0, 1, 0), r = u.clone().cross(n);
-    cubePose[k] = { pos: V(0, 0.006 + j * 0.0015, 0), quat: basisQuat(r, u, n), scale: 0.74 };
+    cubePose[k] = { pos: V(0, 0.006 + j * 0.0015, 0), quat: basisQuat(r, u, n), scale: 0.7, flat: true };
   });
   {
     const u = V(0, 0, -1), n = V(0, 1, 0), r = u.clone().cross(n);
-    cubePose[0] = { pos: V(0, 1.0 + 0.016, (PH - 1) / 2), quat: basisQuat(r, u, n), fold: { at: CREASE_LID, side: -1 } };
+    const pos = V(0, 1.0 + 0.016, (PH - 1) / 2 + 0.016); // its front flap hangs outside the front wall
+    cubePose[0] = { pos, stage: pos.clone().add(V(0, 1.1, 0)), quat: basisQuat(r, u, n), fold: { at: CREASE_LID, side: -1 } };
   }
 
   const tmpQ = new THREE.Quaternion();
@@ -215,15 +219,27 @@ export async function verse3PaperStage(film) {
         if (f > 0) {
           const P = cubePose[k];
           const e = easeInOut(f);
-          const p1 = P.pos;
-          pos = pos.clone().lerp(p1, e);
-          pos.y += Math.sin(f * Math.PI) * fl.lift;
-          quat = quat.clone().slerp(P.quat, easeInOut(clamp(f * 1.15)));
-          curl = Math.sin(f * Math.PI) * 0.25;
+          if (P.stage) {
+            // walls and lid: rise and turn to their final orientation at a staging point, then move straight in
+            const fa = clamp(f / 0.6), fb = clamp((f - 0.6) / 0.4);
+            const ea = easeInOut(fa);
+            pos = pos.clone().lerp(P.stage, ea);
+            pos.y += Math.sin(fa * Math.PI) * fl.lift * (1 - fb);
+            pos.lerp(P.pos, easeOut(fb, 2));
+            quat = quat.clone().slerp(P.quat, easeInOut(clamp(fa * 1.1)));
+            curl = Math.sin(fa * Math.PI) * 0.22;
+          } else {
+            // base pages: lift off, glide flat to the middle, settle onto the stack
+            const eh = easeInOut(clamp((f - 0.12) / 0.88));
+            pos = pos.clone().lerp(P.pos, eh);
+            pos.y += Math.pow(Math.sin(f * Math.PI), 0.7) * fl.lift;
+            quat = quat.clone().slerp(P.quat, eh);
+            curl = Math.sin(f * Math.PI) * 0.18;
+          }
           phase = f * 6;
           scale = lerp(1, P.scale || 1, e);
           if (P.fold) {
-            const fk = clamp((t - fl.t0 - fl.dur) / 0.14);
+            const fk = clamp((t - fl.t0 - fl.dur) / 0.1);
             if (fk > 0) fold = { at: P.fold.at, side: P.fold.side, angle: smooth(fk) * Math.PI / 2 * 0.995 };
           }
         }

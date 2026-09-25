@@ -164,7 +164,14 @@ export async function paperStage(film) {
   const pen = new THREE.Group();
   const gold = new THREE.MeshPhysicalMaterial({ color: new THREE.Color().setRGB(1, 0.72, 0.3), metalness: 1, roughness: 0.3 });
   const lacquer = new THREE.MeshPhysicalMaterial({ color: 0x030303, metalness: 0.1, roughness: 0.12, clearcoat: 1, clearcoatRoughness: 0.05 });
+  const penEnv = studioEnv(film.renderer, [
+    { pos: [0, 6, 2], size: [5, 1.6], color: [1, 0.88, 0.68], intensity: 2.4 },
+    { pos: [-6, 1, 2], size: [0.5, 5], color: [1, 0.78, 0.55], intensity: 2.8 },
+    { pos: [6, 1, -1], size: [0.4, 5], color: [1, 0.9, 0.78], intensity: 2.0 },
+  ], { top: [0.3, 0.24, 0.17], horizon: [0.08, 0.06, 0.04], bottom: [0.01, 0.008, 0.006] });
+  gold.envMap = penEnv;
   const nibMat = gold.clone();
+  nibMat.envMap = penEnv;
   nibMat.normalMap = nibEngraving();
   nibMat.normalScale.set(1.2, 1.2);
   nibMat.envMapIntensity = 0.55;
@@ -220,13 +227,35 @@ export async function paperStage(film) {
   const minHand = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.55, 0.03), handMat);
   minHand.geometry.translate(0, 0.7, 0.05);
   clock.add(hourHand, minHand);
+  // Pocket-watch dress for the second chorus: gold case, crown, bow and a chain.
+  const watch = new THREE.Group();
+  const gold2 = new THREE.MeshPhysicalMaterial({ color: new THREE.Color().setRGB(1, 0.72, 0.3), metalness: 1, roughness: 0.22 });
+  gold2.envMap = null;
+  const caseRing = new THREE.Mesh(new THREE.TorusGeometry(2.12, 0.2, 32, 160), gold2);
+  const caseBack = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.2, 0.35, 128), gold2);
+  caseBack.rotation.x = Math.PI / 2; caseBack.position.z = -0.22;
+  const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.38, 32), gold2);
+  crown.position.set(0, 2.5, 0);
+  const bow = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.07, 16, 64), gold2);
+  bow.position.set(0, 2.95, 0);
+  watch.add(caseRing, caseBack, crown, bow);
+  const linkGeo = new THREE.TorusGeometry(0.16, 0.04, 8, 24);
+  for (let i = 0; i < 26; i++) {
+    const u = i / 25;
+    const l = new THREE.Mesh(linkGeo, gold2);
+    l.position.set(Math.sin(u * 2.6) * 1.3 + u * 0.8, 3.3 + u * 3.2 - Math.sin(u * 3.1) * 0.9, -0.1 - u * 0.4);
+    l.rotation.set(i % 2 ? Math.PI / 2 : 0, u * 1.3, 0);
+    watch.add(l);
+  }
+  watch.visible = false;
+  clock.add(watch);
   scene.add(clock);
 
   const dust = new Dust({ count: 1000, size: 0.02, box: [10, 6, 10], color: [0.8, 1, 0.85], gain: 1.0 });
   scene.add(dust);
 
   const S = {
-    scene, cloud, pen, nib, ink, inkGeo, curve, desk, lamp, posePen, clock, clockFace, hourHand, minHand, dust, key, back,
+    scene, cloud, pen, nib, ink, inkGeo, curve, desk, lamp, posePen, clock, watch, clockFace, hourHand, minHand, dust, key, back,
     fx: { bloom: 0.7, threshold: 0.8, grain: 0.05, vignette: 0.55, tint: [0.96, 1.02, 0.98] },
     // Draw the ink stroke up to fraction k; returns the pen-tip point.
     drawInk(k) {
@@ -283,6 +312,8 @@ export async function paperStage(film) {
       back.intensity = 2.8; back.color.set(0xbfe8c8);
       cloud.setFlutter(1);
       clock.visible = false;
+      watch.visible = false;
+      clock.rotation.set(0, 0, 0);
       dust.visible = true;
       dust.setTime(ctx.t, [0.3, 0.05, -0.1]);
       scene.fog.density = 0.018;

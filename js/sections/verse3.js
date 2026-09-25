@@ -53,9 +53,9 @@ export function shots(S, T) {
     fly: [],
   };
   const BASE = [1, 3, 5, 6], WALLS = [8, 2, 7, 4]; // walls fly back to front
-  BASE.forEach((k, j) => { tm.fly[k] = { t0: 125.95 + j * 0.06, dur: 0.3, lift: 0.5 }; });
-  WALLS.forEach((k, j) => { tm.fly[k] = { t0: 126.1 + j * 0.09, dur: 0.34, lift: 0.9 }; });
-  tm.fly[0] = { t0: 126.56, dur: 0.32, lift: 1.4 };
+  BASE.forEach((k, j) => { tm.fly[k] = { t0: 125.94 + j * 0.05, dur: 0.26, lift: 0.25 + j * 0.12 }; });
+  WALLS.forEach((k, j) => { tm.fly[k] = { t0: 126.06 + j * 0.09, dur: 0.4, lift: 0.7 }; });
+  tm.fly[0] = { t0: 126.56, dur: 0.36, lift: 0.8 };
 
   // ---- 124.62 "dropped nine pages": they fall out of the dark and land in a ring.
   S(W('dropped'), 'verse3-paper', orbitCam({ target: [0, 0.35, 0], dist: [9.4, 9.0], az: [14, 30], el: [36, 60], fov: 38, ease: easeInOut }),
@@ -82,7 +82,7 @@ export function shots(S, T) {
   // ---- 132.48 "January oh-nine, Genesis, block zero": a spark in the dark traces block zero, and it lights.
   const tJan = W('January');
   S(tJan, 'verse3-genesis', orbitCam({ target: [0, 0.05, 0], dist: [5.6, 4.3], az: [50, 22], el: [21, 9], fov: 32, ease: easeInOut }),
-    (s, c) => { s.birth(c.t, { tSpark: tJan, tEdges: tJan + 0.42, tFaces: W('Genesis,') - 0.15, tGlow: W('block', 134) }); });
+    (s, c) => { s.birth(c.t, { tSpark: tJan - 0.5, tEdges: tJan - 0.3, tFaces: W('Genesis,') - 0.15, tGlow: W('block', 134) }); });
 
   // ---- 135.10 "stamped the bailout headline, a receipt, not a hero": the coinbase text slams into the side.
   const tStamp = W('stamped');
@@ -145,8 +145,9 @@ export function shots(S, T) {
     const u = easeInOut(c.u);
     const k = Math.pow(c.u, 1.6);
     const z = aspectZoom(c);
-    const target = [lerp(0, corner[0] - 0.12, k), 0.26, lerp(0, corner[2] - 0.12, k)];
-    const d = Math.exp(lerp(Math.log(9.5), Math.log(1.25), k)) * z;
+    // start on the whole tray and its engraved ledge, end in the corner the halves never reach
+    const target = [lerp(0, corner[0] - 0.12, k), 0.26, lerp(0.8, corner[2] - 0.12, k)];
+    const d = Math.exp(lerp(Math.log(10.2), Math.log(1.25), k)) * z;
     const az = (lerp(18, 32, u) * Math.PI) / 180, el = (lerp(58, 50, u) * Math.PI) / 180;
     cam.position.set(target[0] + d * Math.sin(az) * Math.cos(el), target[1] + d * Math.sin(el), target[2] + d * Math.cos(az) * Math.cos(el));
     cam.lookAt(...target);

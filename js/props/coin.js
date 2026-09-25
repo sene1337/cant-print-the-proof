@@ -14,7 +14,7 @@ const geoCache = new Map();
 
 function coinShape(R, clip, seed) {
   const s = new THREE.Shape();
-  const N = 360;
+  const N = 720;
   const r = rng(seed);
   const notches = [];
   for (let i = 0; i < 9; i++) notches.push({ a: r() * Math.PI * 2, w: 0.12 + r() * 0.25, d: 0.05 + r() * 0.11, at: i / 9 });
@@ -95,7 +95,7 @@ export class Coin extends THREE.Group {
     }
     if (edge) {
       const band = new THREE.Mesh(
-        new THREE.CylinderGeometry(radius * 1.001, radius * 1.001, thickness * 0.62, 256, 1, true),
+        new THREE.CylinderGeometry(radius * 1.001, radius * 1.001, thickness * 0.62, 720, 1, true),
         new THREE.MeshPhysicalMaterial({ color: this.base.clone(), metalness: 1, roughness: 0.3, normalMap: edge.normal, map: edge.color }),
       );
       edge.normal.repeat.set(2, 1);

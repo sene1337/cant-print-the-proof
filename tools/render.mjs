@@ -52,11 +52,11 @@ await browser.close();
 server.close();
 if (errors.length) console.warn('page errors:', [...new Set(errors)].slice(0, 5));
 
-// Audio: the approved master, limited to -1 dBTP for delivery (4x oversampled peak limiter). Loudness unchanged otherwise.
+// Audio: the approved master, limited to -1.5 dBFS for delivery, so AAC stays under -1 dBTP (4x oversampled peak limiter). Loudness unchanged otherwise.
 const song = path.join(root, 'media/song.mp3');
 const wav = path.join(outDir, 'song-delivery.wav');
 if (!fs.existsSync(wav)) {
-  execFileSync('ffmpeg', ['-y', '-v', 'error', '-i', song, '-af', 'aresample=192000,alimiter=limit=0.87:attack=2:release=60:level=false,aresample=48000', '-c:a', 'pcm_s24le', wav]);
+  execFileSync('ffmpeg', ['-y', '-v', 'error', '-i', song, '-af', 'aresample=192000,alimiter=limit=0.84:attack=2:release=60:level=false,aresample=48000', '-c:a', 'pcm_s24le', wav]);
 }
 const master = path.join(outDir, `${NAME}-master.mp4`);
 execFileSync('ffmpeg', ['-y', '-v', 'error',

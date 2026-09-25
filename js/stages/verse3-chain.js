@@ -62,7 +62,15 @@ function graniteMaps(seed = 3, S = 1024) {
   const map = canvasTex(col, { repeat: true, aniso: 16 });
   const normal = normalFromHeight(hgt, 1.6, 1.2);
   normal.wrapS = normal.wrapT = THREE.RepeatWrapping;
-  return { map, normal };
+  // A calm version for surfaces seen at grazing angles: softened crystals, lower contrast,
+  // a gentle normal map, so the stone doesn't shimmer as the camera moves.
+  const calmC = canvas(S, S), kg = calmC.getContext('2d');
+  kg.filter = 'blur(1.6px)'; kg.drawImage(col, 0, 0); kg.filter = 'none';
+  kg.fillStyle = 'rgba(104,102,99,0.42)'; kg.fillRect(0, 0, S, S);
+  const calmMap = canvasTex(calmC, { repeat: true, aniso: 16 });
+  const calmNormal = normalFromHeight(hgt, 0.7, 3.5);
+  calmNormal.wrapS = calmNormal.wrapT = THREE.RepeatWrapping;
+  return { map, normal, calmMap, calmNormal };
 }
 
 // Carved inscription on a dressed (polished) granite panel: albedo with dark V-cut letters, plus a height map.
@@ -165,18 +173,20 @@ export async function verse3ChainStage(film) {
 
   // Granite bedrock: a quarried top the chain sits on, and a rough cliff face that drops into the dark.
   const gr = graniteMaps(3);
-  const graniteMat = (rx, ry, rough = 0.62, flat = false) => {
-    const map = gr.map.clone(); map.repeat.set(rx, ry); map.needsUpdate = true;
-    const nm = gr.normal.clone(); nm.repeat.set(rx, ry); nm.needsUpdate = true;
-    return new THREE.MeshStandardMaterial({ map, normalMap: nm, normalScale: new THREE.Vector2(1.2, 1.2), roughness: rough, metalness: 0, flatShading: flat });
+  const graniteMat = (rx, ry, rough = 0.62, flat = false, calm = false) => {
+    const map = (calm ? gr.calmMap : gr.map).clone(); map.repeat.set(rx, ry); map.needsUpdate = true;
+    const nm = (calm ? gr.calmNormal : gr.normal).clone(); nm.repeat.set(rx, ry); nm.needsUpdate = true;
+    const k = calm ? 0.8 : 1.0;
+    return new THREE.MeshStandardMaterial({ map, normalMap: nm, normalScale: new THREE.Vector2(k, k), roughness: rough, metalness: 0, flatShading: flat });
   };
   const L = 300, X0 = -200;
   const FRONT_Z = 1.3, DEPTH = 40;
   const tGranite = T.wordAfter('granite', 150).s;
   const XG = xOf(beats.filter((b) => b <= tGranite).length - 1) - 1.4; // where the carved panel sits
   const PANEL = { x: XG, y: -3.3, w: 9.2, h: 2.7 };
-  const TILE = 2.6;
-  const top = new THREE.Mesh(new THREE.PlaneGeometry(L, 6), graniteMat(L / TILE, 6 / TILE, 0.5));
+  const TILE = 3.4;
+  const TOP_TILE = 5.5; // the ledge is seen edge-on: a larger, calmer grain
+  const top = new THREE.Mesh(new THREE.PlaneGeometry(L, 6), graniteMat(L / TOP_TILE, 6 / TOP_TILE, 0.6, false, true));
   top.rotation.x = -Math.PI / 2;
   top.position.set(X0 + L / 2, 0, FRONT_Z - 3);
   top.receiveShadow = true;
@@ -216,19 +226,19 @@ export async function verse3ChainStage(film) {
   };
   // fine rock near the camera's work, coarse rock beyond
   const nearX0 = XG - 34, nearX1 = XG + 30;
-  const cliffNear = new THREE.Mesh(rockGeo(nearX0, nearX1, -DEPTH, 0, 0.26), graniteMat((nearX1 - nearX0) / TILE, DEPTH / TILE, 0.62, true));
+  const cliffNear = new THREE.Mesh(rockGeo(nearX0, nearX1, -DEPTH, 0, 0.26), graniteMat((nearX1 - nearX0) / TILE, DEPTH / TILE, 0.62, true, true));
   cliffNear.position.z = FRONT_Z;
   cliffNear.castShadow = cliffNear.receiveShadow = true;
   scene.add(cliffNear);
-  const cliffFar = new THREE.Mesh(rockGeo(X0, nearX0 + 0.01, -DEPTH, 0, 1.0), graniteMat((nearX0 - X0) / TILE, DEPTH / TILE, 0.62, true));
+  const cliffFar = new THREE.Mesh(rockGeo(X0, nearX0 + 0.01, -DEPTH, 0, 1.0), graniteMat((nearX0 - X0) / TILE, DEPTH / TILE, 0.62, true, true));
   cliffFar.position.z = FRONT_Z;
   scene.add(cliffFar);
-  const cliffFar2 = new THREE.Mesh(rockGeo(nearX1 - 0.01, X0 + L, -DEPTH, 0, 1.0), graniteMat((X0 + L - nearX1) / TILE, DEPTH / TILE, 0.62, true));
+  const cliffFar2 = new THREE.Mesh(rockGeo(nearX1 - 0.01, X0 + L, -DEPTH, 0, 1.0), graniteMat((X0 + L - nearX1) / TILE, DEPTH / TILE, 0.62, true, true));
   cliffFar2.position.z = FRONT_Z;
   scene.add(cliffFar2);
   const cliff = cliffNear;
   // a bevelled lip where the top meets the cliff, catching a highlight
-  const lip = new THREE.Mesh(new THREE.BoxGeometry(L, 0.12, 0.12), graniteMat(L / TILE, 0.05));
+  const lip = new THREE.Mesh(new THREE.BoxGeometry(L, 0.12, 0.12), graniteMat(L / TOP_TILE, 0.05, 0.6, false, true));
   lip.position.set(X0 + L / 2, -0.04, FRONT_Z - 0.03);
   scene.add(lip);
 

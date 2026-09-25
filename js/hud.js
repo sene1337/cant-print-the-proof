@@ -14,7 +14,7 @@ export function drawHud(g, w, h, chain, t, { alpha = 1 } = {}) {
   const shade = (w / h < 1.2 ? 130 : 90) * s;
   const grd = g.createLinearGradient(0, h - shade, 0, h);
   grd.addColorStop(0, 'rgba(0,0,0,0)');
-  grd.addColorStop(1, 'rgba(0,0,0,0.55)');
+  grd.addColorStop(1, 'rgba(0,0,0,0.32)');
   g.fillStyle = grd;
   g.fillRect(0, h - shade, w, shade);
 
