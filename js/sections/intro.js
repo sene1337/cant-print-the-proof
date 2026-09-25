@@ -15,7 +15,7 @@ export function shots(S, T) {
       s.key.target.position.set(0, 0.09, 1.0);
       s.key.intensity = 1.6;
     },
-    { fadeIn: 1.4, aperture: 0.00015, focus: 0.66, maxblur: 0.008, bloom: 0.3 });
+    { fadeIn: 0.5, aperture: 0.00015, focus: 0.66, maxblur: 0.008, bloom: 0.3 });
   // 2. Raking light crosses the king's face: the relief comes up out of the dark.
   S(2.0, 'gold', orbitCam({ target: [0, 0.09, 0], dist: [2.5, 2.2], az: [-8, 6], el: [62, 66], fov: 30 }),
     (s, c) => {

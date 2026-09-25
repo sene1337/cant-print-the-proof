@@ -78,6 +78,7 @@ async function boot() {
     window.__ready = true;
     return;
   }
+  window.__film = film;
   player(film, chain, hg, hud, W, H);
 }
 

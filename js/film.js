@@ -37,7 +37,15 @@ const FinalShader = {
     uniform float uTime, uFrame, uGrain, uVignette, uCA, uFlash, uFade, uSat, uContrast, uAspect;
     uniform vec3 uFlashColor, uTint, uLift;
     varying vec2 vUv;
-    float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+    // Integer hash per pixel and frame: no streaks or banding in the grain.
+    float grainHash(vec2 fc, float frame) {
+      uint f = uint(frame);
+      uvec2 p = uvec2(fc) + uvec2(f * 1973u, f * 9277u);
+      p = p * uvec2(1597334673u, 3812015801u);
+      uint n = (p.x ^ p.y) * 1597334673u;
+      n ^= n >> 16;
+      return float(n) / 4294967295.0;
+    }
     void main() {
       vec2 c = vUv - 0.5;
       float r2 = dot(c * vec2(uAspect, 1.0), c * vec2(uAspect, 1.0));
@@ -53,7 +61,7 @@ const FinalShader = {
       float v = smoothstep(1.25, 0.2, sqrt(r2) * 1.1);
       col *= mix(1.0, v, uVignette);
       col += uFlashColor * uFlash;
-      float g = hash(vUv * vec2(1920.0, 1080.0) + uFrame * 17.13) - 0.5;
+      float g = grainHash(gl_FragCoord.xy, uFrame) - 0.5;
       col += g * uGrain * (0.6 + 0.4 * (1.0 - l));
       col *= 1.0 - uFade;
       gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
