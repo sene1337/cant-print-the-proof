@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { studioEnv } from '../film.js';
 import { NoteCloud, NOTE } from '../props/notes.js';
 import { Dust } from '../props/dust.js';
-import { banknote } from '../tex.js';
+import { banknote, normalFromHeight } from '../tex.js';
 import { clamp, hash1, smooth, easeOut, lerp } from '../util.js';
 
 function nibGeometry() {
@@ -28,17 +28,81 @@ function nibGeometry() {
   return g;
 }
 
+// Engraving on the nib: the slit, a ring round the breather hole, scrollwork, a hallmark. Returns a normal map
+// laid over the nib's extruded cap UVs (which are its shape coordinates).
+function nibEngraving() {
+  const W = 512, H = 1224;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  g.fillStyle = '#808080'; g.fillRect(0, 0, W, H);
+  const X = (x) => ((x + 0.7) / 1.4) * W, Y = (y) => H - ((y + 1.95) / 3.35) * H;
+  g.strokeStyle = '#202020'; g.lineCap = 'round';
+  g.lineWidth = 7; g.beginPath(); g.moveTo(X(0), Y(-1.9)); g.lineTo(X(0), Y(0.15)); g.stroke();
+  g.lineWidth = 6; g.beginPath(); g.arc(X(0), Y(0.25), 0.16 / 1.4 * W, 0, Math.PI * 2); g.stroke();
+  g.lineWidth = 4;
+  for (const sgn of [-1, 1]) {
+    for (let k = 0; k < 5; k++) {
+      g.beginPath();
+      for (let i = 0; i <= 60; i++) {
+        const u = i / 60;
+        const y = 0.35 + u * 0.95;
+        const x = sgn * (0.12 + 0.36 * Math.sin(u * Math.PI) * (0.4 + 0.12 * k) + 0.05 * Math.sin(u * 14 + k));
+        i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y));
+      }
+      g.stroke();
+    }
+    g.beginPath();
+    for (let i = 0; i <= 40; i++) { const a = i / 40 * Math.PI * 3; const r = 0.02 + a * 0.012; g.lineTo(X(sgn * 0.3 + Math.cos(a) * r), Y(-0.35 + Math.sin(a) * r)); }
+    g.stroke();
+  }
+  g.fillStyle = '#303030'; g.font = '700 46px "Figtree"'; g.textAlign = 'center';
+  g.fillText('750', X(0), Y(-0.75));
+  const t = normalFromHeight(c, 3.0, 1.5);
+  t.repeat.set(1 / 1.4, 1 / 3.35);
+  t.offset.set(0.5, 1.95 / 3.35);
+  return t;
+}
+
 function signaturePath() {
-  // A long flourish, like a signature on a decree.
+  // A long flourish across the desk, like a signature on a decree. Lies in the desk plane (y = 0).
   const pts = [];
   for (let i = 0; i <= 400; i++) {
     const u = i / 400;
     const x = -6 + u * 12;
-    const y = Math.sin(u * 9.5) * 0.9 * (1 - u * 0.4) + Math.sin(u * 23) * 0.18 + (u > 0.8 ? (u - 0.8) * 3 : 0);
-    const z = Math.cos(u * 7) * 0.15;
-    pts.push(new THREE.Vector3(x, y, z));
+    const z = -(Math.sin(u * 9.5) * 0.9 * (1 - u * 0.4) + Math.sin(u * 23) * 0.18 + (u > 0.8 ? (u - 0.8) * 3 : 0));
+    pts.push(new THREE.Vector3(x, 0.045, z));
   }
   return new THREE.CatmullRomCurve3(pts);
+}
+
+function noiseNormal(size = 512, strength = 1.2) {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d');
+  const img = g.createImageData(size, size);
+  for (let i = 0; i < size * size; i++) {
+    const x = i % size, y = (i / size) | 0;
+    const v = 128 + (hash1(i * 13 + 7) - 0.5) * 60 + Math.sin(x * 0.05 + Math.sin(y * 0.03) * 3) * 20;
+    img.data[i * 4] = img.data[i * 4 + 1] = img.data[i * 4 + 2] = v; img.data[i * 4 + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  const t = normalFromHeight(c, strength, 1.2);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(12, 8);
+  return t;
+}
+
+// Orient the pen: its local +y runs from the nib tip up the barrel, local +z is the nib's top face.
+const _m = new THREE.Matrix4(), _x = new THREE.Vector3(), _y = new THREE.Vector3(), _z = new THREE.Vector3();
+export function posePen(pen, tip, axis, up = [0, 1, 0]) {
+  _y.set(...axis).normalize();
+  _z.set(...up);
+  _z.addScaledVector(_y, -_z.dot(_y)).normalize();
+  _x.crossVectors(_y, _z).normalize();
+  _m.makeBasis(_x, _y, _z);
+  pen.quaternion.setFromRotationMatrix(_m);
+  pen.position.copy(tip);
 }
 
 function clockTexture() {
@@ -96,26 +160,52 @@ export async function paperStage(film) {
   const cloud = new NoteCloud(noteTex, 6000, { emissive: 0.1 });
   scene.add(cloud);
 
-  // Pen: gold nib on a black barrel.
+  // Pen: gold nib, black section, gold band, long black lacquer barrel.
   const pen = new THREE.Group();
-  const nib = new THREE.Mesh(nibGeometry(), new THREE.MeshPhysicalMaterial({ color: new THREE.Color().setRGB(1, 0.72, 0.3), metalness: 1, roughness: 0.18 }));
-  nib.position.set(0, 1.9, 0);
+  const gold = new THREE.MeshPhysicalMaterial({ color: new THREE.Color().setRGB(1, 0.72, 0.3), metalness: 1, roughness: 0.3 });
+  const lacquer = new THREE.MeshPhysicalMaterial({ color: 0x030303, metalness: 0.1, roughness: 0.12, clearcoat: 1, clearcoatRoughness: 0.05 });
+  const nibMat = gold.clone();
+  nibMat.normalMap = nibEngraving();
+  nibMat.normalScale.set(1.2, 1.2);
+  nibMat.envMapIntensity = 0.55;
+  nibMat.roughness = 0.34;
+  const nib = new THREE.Mesh(nibGeometry(), nibMat);
+  nib.position.set(0, 1.9, -0.02);
   pen.add(nib);
-  const barrel = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.62, 0.7, 7, 64),
-    new THREE.MeshPhysicalMaterial({ color: 0x050505, metalness: 0.3, roughness: 0.18, clearcoat: 1 }),
-  );
-  barrel.position.set(0, 3.25 + 3.5, 0.2);
-  pen.add(barrel);
-  const band = new THREE.Mesh(new THREE.CylinderGeometry(0.72, 0.72, 0.25, 64), nib.material);
-  band.position.set(0, 3.4, 0.2);
+  const section = new THREE.Mesh(new THREE.CylinderGeometry(0.52, 0.66, 1.6, 64), lacquer);
+  section.position.set(0, 3.9, -0.28);
+  pen.add(section);
+  const band = new THREE.Mesh(new THREE.CylinderGeometry(0.69, 0.69, 0.22, 64), gold);
+  band.position.set(0, 4.8, -0.28);
   pen.add(band);
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.62, 8, 64), lacquer);
+  barrel.position.set(0, 8.9, -0.28);
+  pen.add(barrel);
+  const cap = new THREE.Mesh(new THREE.SphereGeometry(0.62, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2), lacquer);
+  cap.position.set(0, 12.9, -0.28);
+  pen.add(cap);
+  pen.traverse((o) => { if (o.isMesh) o.castShadow = true; });
   scene.add(pen);
+
+  // The desk: dark leather under a lamp.
+  const desk = new THREE.Mesh(
+    new THREE.PlaneGeometry(80, 50),
+    new THREE.MeshPhysicalMaterial({ color: 0x050302, roughness: 0.82, metalness: 0, normalMap: noiseNormal(), normalScale: new THREE.Vector2(0.5, 0.5), envMapIntensity: 0.05 }),
+  );
+  desk.rotation.x = -Math.PI / 2;
+  desk.receiveShadow = true;
+  scene.add(desk);
+  const lamp = new THREE.SpotLight(0xffd9a8, 8, 40, 0.42, 1.0, 1.4);
+  lamp.position.set(-6, 10, -6);
+  lamp.castShadow = true;
+  lamp.shadow.mapSize.set(2048, 2048);
+  lamp.shadow.bias = -0.0003;
+  scene.add(lamp, lamp.target);
 
   // The ink stroke: the signature that makes money from nothing.
   const curve = signaturePath();
   const inkGeo = new THREE.TubeGeometry(curve, 800, 0.045, 10, false);
-  const ink = new THREE.Mesh(inkGeo, new THREE.MeshBasicMaterial({ color: new THREE.Color(0.25, 1, 0.55).multiplyScalar(3.2) }));
+  const ink = new THREE.Mesh(inkGeo, new THREE.MeshBasicMaterial({ color: new THREE.Color(0.25, 1, 0.5).multiplyScalar(1.6) }));
   scene.add(ink);
 
   // Clock.
@@ -136,7 +226,7 @@ export async function paperStage(film) {
   scene.add(dust);
 
   const S = {
-    scene, cloud, pen, nib, ink, inkGeo, curve, clock, clockFace, hourHand, minHand, dust, key, back,
+    scene, cloud, pen, nib, ink, inkGeo, curve, desk, lamp, posePen, clock, clockFace, hourHand, minHand, dust, key, back,
     fx: { bloom: 0.7, threshold: 0.8, grain: 0.05, vignette: 0.55, tint: [0.96, 1.02, 0.98] },
     // Draw the ink stroke up to fraction k; returns the pen-tip point.
     drawInk(k) {
@@ -184,7 +274,13 @@ export async function paperStage(film) {
     update(ctx) {
       cloud.visible = false;
       pen.visible = false;
+      pen.scale.setScalar(1);
       ink.visible = false;
+      desk.visible = false;
+      lamp.visible = false;
+      key.intensity = 2.2; key.color.set(0xf4f8e8);
+      back.intensity = 2.8; back.color.set(0xbfe8c8);
+      cloud.setFlutter(1);
       clock.visible = false;
       dust.visible = true;
       dust.setTime(ctx.t, [0.3, 0.05, -0.1]);

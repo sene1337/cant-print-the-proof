@@ -7,8 +7,10 @@
 <meta name="description" content="A music video about the history of money that plays live in your browser. Every frame is a mined proof-of-work block you can verify yourself.">
 <meta property="og:title" content="Can't Print the Proof">
 <meta property="og:description" content="A music video that plays live in your browser. Every frame is a mined block. Verify it yourself.">
-<meta name="theme-color" content="#050505">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23050505'/%3E%3Crect x='18' y='18' width='28' height='28' rx='3' fill='none' stroke='%23F7931A' stroke-width='4'/%3E%3C/svg%3E">
+<meta property="og:image" content="media/poster.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#060504">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23060504'/%3E%3Crect x='18' y='18' width='28' height='28' rx='3' fill='none' stroke='%23F7931A' stroke-width='4'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="css/site.css">
 <script type="importmap">
 { "imports": { "three": "./vendor/three/three.module.js", "three/addons/": "./vendor/three/addons/" } }
@@ -16,15 +18,16 @@
 </head>
 <body>
 <div id="stage" class="stage">
+  <img id="poster" class="poster" src="media/poster.jpg" alt="" aria-hidden="true">
   <canvas id="gl" aria-label="Music video: Can't Print the Proof"></canvas>
   <canvas id="hud" aria-hidden="true"></canvas>
   <div id="cover" class="cover">
     <p class="kicker">A music video that is also a blockchain</p>
     <h1>Can't Print<br>the Proof</h1>
     <button id="play" class="play" type="button" disabled>
-      <span class="play-icon" aria-hidden="true"></span><span id="playLabel">Loading</span>
+      <span class="play-icon" aria-hidden="true"></span><span id="playLabel">Loading the film</span>
     </button>
-    <p class="fine">Plays live in your browser, drawn frame by frame. Sound on.</p>
+    <p class="fine" id="fine">Drawn live in your browser, frame by frame. Sound on.</p>
   </div>
 </div>
 <div id="ui" class="ui" hidden>
@@ -34,20 +37,38 @@
   </div>
   <span id="clock" class="clock">0:00</span>
 </div>
-<main id="about" class="about">
-  <section>
+
+<main class="page">
+  <section class="lede">
+    <p class="big">Money tells its own story: shell, stone, gold, paper, proof. Paper can be printed without limit. Proof has to be earned, and there will only ever be twenty-one million.</p>
+  </section>
+
+  <section id="blocks">
+    <a class="stamp" href="#stage" data-seek="44.2">0:44 in the film</a>
     <h2>Every frame is a block</h2>
-    <p>The video runs at 30 frames a second. Each frame is its own proof-of-work block: an 80-byte header that links to the previous block, commits to the SHA-256 of the song, and carries a nonce that took real work to find. The first block links to Bitcoin's real genesis block. Together that is <strong id="nBlocks">5,521</strong> blocks and <strong id="nHashes">1,444,915,378</strong> hashes.</p>
-    <p>This is an art chain, not Bitcoin. It earns nothing. It shows the one thing a printer can't fake: work.</p>
+    <p>The film runs at 30 frames a second, and each frame is its own proof-of-work block: an 80-byte header that points to the block before it, commits to the SHA-256 fingerprint of the song, and carries a nonce that took real computing work to find. The first block points to Bitcoin's own genesis block. The strip along the bottom of the film shows the block you are watching; its leading zeros are the work.</p>
+    <dl class="figures">
+      <div><dt>Blocks</dt><dd id="nBlocks">5,521</dd></div>
+      <div><dt>Hashes of work</dt><dd id="nHashes">1,444,915,378</dd></div>
+      <div><dt>Difficulty</dt><dd>18 zero bits</dd></div>
+    </dl>
+    <p>It is an art chain, not Bitcoin, and it earns nothing. It shows the one thing a printer can't make: work you can check.</p>
     <div class="verify">
       <button id="verifyBtn" class="btn" type="button">Verify every block in your browser</button>
-      <p id="verifyOut" class="verify-out" aria-live="polite"></p>
+      <pre id="verifyOut" class="verify-out" aria-live="polite"></pre>
     </div>
   </section>
-  <section>
-    <h2>Open source</h2>
-    <p>The film is code. Read it, run it, fork it: <a id="repoLink" href="#">GitHub</a>.</p>
+
+  <section id="made">
+    <a class="stamp" href="#stage" data-seek="1.2">0:01 in the film</a>
+    <h2>Made in the open</h2>
+    <p>There is no video file on this page. The film is about four thousand lines of JavaScript that draw each frame with three.js as the song plays, so the picture you see is being made on your own graphics chip. The same code, run frame by frame, renders the video file. The coins are photographed museum pieces, all public domain. The song was generated with ElevenLabs Music.</p>
+    <p><a id="repoLink" class="repo" href="https://github.com/sene1337/cant-print-the-proof">Read the code on GitHub</a></p>
   </section>
+
+  <footer class="credits">
+    <p>Coin, moon, stone and paper-note photographs: public domain and CC0, from The Metropolitan Museum of Art, the Smithsonian and Wikimedia Commons (<a href="tex/CREDITS.md">full list</a>). Typefaces: Cormorant Garamond, Figtree, JetBrains Mono, Playfair Display (SIL Open Font License). Code: MIT licence.</p>
+  </footer>
 </main>
 <script type="module" src="js/main.js"></script>
 </body>

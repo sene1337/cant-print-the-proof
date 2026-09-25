@@ -21,7 +21,7 @@ export async function preload(base) {
   await Promise.all(names.map((n) => loadImage(`${base}tex/${n}`)));
   const fonts = ['300 40px "Cormorant Garamond"', '600 40px "Cormorant Garamond"', '700 40px "Cormorant Garamond"',
     '500 40px "JetBrains Mono"', '700 40px "JetBrains Mono"', '900 40px "Playfair Display"', '700 40px "Playfair Display"',
-    '600 40px "Figtree"', '800 40px "Figtree"'];
+    '400 40px "Figtree"', '500 40px "Figtree"', '600 40px "Figtree"', '800 40px "Figtree"', '400 40px "JetBrains Mono"'];
   await Promise.all(fonts.map((f) => document.fonts.load(f)));
   TEX.base = base;
 }

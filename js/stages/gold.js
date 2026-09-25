@@ -9,6 +9,7 @@ import { clamp, hash1 } from '../util.js';
 export async function goldStage(film) {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x000000);
+  scene.fog = new THREE.FogExp2(0x000000, 0.05);
   scene.environment = studioEnv(film.renderer, [
     { pos: [0, 6, 1.5], size: [6, 2.5], color: [1, 0.9, 0.78], intensity: 2.2 },
     { pos: [-6, 1.2, 2], size: [0.5, 5], color: [1, 0.82, 0.62], intensity: 3.0 },
@@ -40,7 +41,7 @@ export async function goldStage(film) {
   // Floor: black lacquer, for reflections under the coin.
   const floor = new THREE.Mesh(
     new THREE.CircleGeometry(40, 64),
-    new THREE.MeshPhysicalMaterial({ color: 0x020202, roughness: 0.35, metalness: 0.0, clearcoat: 0.6, clearcoatRoughness: 0.12, envMapIntensity: 0.25 }),
+    new THREE.MeshPhysicalMaterial({ color: 0x0b0907, roughness: 0.55, metalness: 0.0, envMapIntensity: 0.02 }),
   );
   floor.rotation.x = -Math.PI / 2;
   floor.receiveShadow = true;

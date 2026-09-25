@@ -82,32 +82,49 @@ async function boot() {
 }
 
 function player(film, chain, hg, hud, W, H) {
+  const $ = (id) => document.getElementById(id);
   const audio = new Audio(`${BASE}media/song.mp3`);
   audio.preload = 'auto';
-  const playBtn = document.getElementById('play');
-  const label = document.getElementById('playLabel');
-  const cover = document.getElementById('cover');
-  const ui = document.getElementById('ui');
-  const pauseBtn = document.getElementById('pause');
-  const scrub = document.getElementById('scrub');
-  const fill = document.getElementById('scrubFill');
-  const clock = document.getElementById('clock');
+  const playBtn = $('play'), label = $('playLabel'), cover = $('cover'), poster = $('poster'), ui = $('ui');
+  const pauseBtn = $('pause'), scrub = $('scrub'), fill = $('scrubFill'), clock = $('clock');
   const dur = film.T.duration;
-  let started = false;
+  let running = false;
   let lastAudioT = 0, lastWall = performance.now();
 
   playBtn.disabled = false;
   label.textContent = 'Play';
-  film.render(0.5);
 
+  // Song time, smoothed between the audio element's coarse updates.
   const now = () => {
     if (audio.paused) return audio.currentTime;
     if (audio.currentTime !== lastAudioT) { lastAudioT = audio.currentTime; lastWall = performance.now(); }
     return Math.min(dur, lastAudioT + (performance.now() - lastWall) / 1000);
   };
-  const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+  const fmt = (x) => `${Math.floor(x / 60)}:${String(Math.floor(x % 60)).padStart(2, '0')}`;
 
-  function frame() {
+  // Adaptive quality: if frames are slow, drop resolution, then depth of field.
+  let pr = Math.min(window.devicePixelRatio || 1, 1.5);
+  let slow = 0, level = 0, lastFrame = 0;
+  function adapt(dt) {
+    if (dt > 0 && dt < 250) slow = slow * 0.95 + (dt > 26 ? 1 : 0) * 0.05;
+    if (slow > 0.6 && level < 3) {
+      level++;
+      slow = 0;
+      if (level === 1) pr = Math.min(pr, 1);
+      if (level === 2) film.bokeh.enabled = false, film.quality = 'low';
+      if (level === 3) pr = 0.75;
+      resize();
+    }
+  }
+  function resize() {
+    const el = $('stage');
+    film.setSize(el.clientWidth, el.clientHeight, pr);
+    hud.width = Math.round(el.clientWidth * pr); hud.height = Math.round(el.clientHeight * pr);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  function draw() {
     const t = now();
     film.render(t);
     const shot = film.shotAt(t);
@@ -115,53 +132,80 @@ function player(film, chain, hg, hud, W, H) {
     fill.style.width = `${(t / dur) * 100}%`;
     scrub.setAttribute('aria-valuenow', Math.round(t));
     clock.textContent = fmt(t);
-    if (!audio.paused || started) requestAnimationFrame(frame);
+  }
+  function loop(ts) {
+    if (!running) return;
+    adapt(ts - lastFrame);
+    lastFrame = ts;
+    draw();
+    requestAnimationFrame(loop);
+  }
+  function start() {
+    if (running) return;
+    running = true;
+    lastFrame = performance.now();
+    requestAnimationFrame(loop);
   }
 
-  playBtn.addEventListener('click', async () => {
-    await audio.play();
-    started = true;
+  async function play() {
+    try { await audio.play(); } catch (e) { label.textContent = 'Tap to play'; return; }
     cover.classList.add('gone');
+    poster.classList.add('gone');
     ui.hidden = false;
-    requestAnimationFrame(frame);
-  });
-  pauseBtn.addEventListener('click', () => {
-    if (audio.paused) { audio.play(); pauseBtn.classList.remove('paused'); pauseBtn.setAttribute('aria-label', 'Pause'); }
+    pauseBtn.classList.remove('paused'); pauseBtn.setAttribute('aria-label', 'Pause');
+    start();
+  }
+  function toggle() {
+    if (audio.paused) play();
     else { audio.pause(); pauseBtn.classList.add('paused'); pauseBtn.setAttribute('aria-label', 'Play'); }
-  });
-  const seek = (e) => {
-    const r = scrub.getBoundingClientRect();
-    audio.currentTime = Math.max(0, Math.min(dur, ((e.clientX - r.left) / r.width) * dur));
+  }
+  playBtn.addEventListener('click', play);
+  pauseBtn.addEventListener('click', toggle);
+  const seekTo = (x) => {
+    audio.currentTime = Math.max(0, Math.min(dur - 0.05, x));
     lastAudioT = audio.currentTime; lastWall = performance.now();
+    if (!running) { cover.classList.add('gone'); poster.classList.add('gone'); ui.hidden = false; start(); }
+    if (audio.paused) draw();
   };
-  scrub.addEventListener('pointerdown', (e) => { seek(e); scrub.setPointerCapture(e.pointerId); });
-  scrub.addEventListener('pointermove', (e) => { if (e.buttons) seek(e); });
+  const seekEvent = (e) => { const r = scrub.getBoundingClientRect(); seekTo(((e.clientX - r.left) / r.width) * dur); };
+  scrub.addEventListener('pointerdown', (e) => { seekEvent(e); scrub.setPointerCapture(e.pointerId); });
+  scrub.addEventListener('pointermove', (e) => { if (e.buttons) seekEvent(e); });
   scrub.addEventListener('keydown', (e) => {
-    if (e.key === 'ArrowRight') audio.currentTime = Math.min(dur, audio.currentTime + 5);
-    if (e.key === 'ArrowLeft') audio.currentTime = Math.max(0, audio.currentTime - 5);
+    if (e.key === 'ArrowRight') { seekTo(audio.currentTime + 5); e.preventDefault(); }
+    if (e.key === 'ArrowLeft') { seekTo(audio.currentTime - 5); e.preventDefault(); }
   });
-  audio.addEventListener('ended', () => { cover.classList.remove('gone'); label.textContent = 'Play again'; });
-
-  window.addEventListener('resize', () => {
-    const el = document.getElementById('stage');
-    const pr = Math.min(window.devicePixelRatio || 1, 1.5);
-    film.setSize(el.clientWidth, el.clientHeight, pr);
-    hud.width = Math.round(el.clientWidth * pr); hud.height = Math.round(el.clientHeight * pr);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === ' ' && !['BUTTON', 'INPUT', 'A'].includes(document.activeElement?.tagName)) { e.preventDefault(); toggle(); }
   });
+  audio.addEventListener('ended', () => {
+    running = false;
+    cover.classList.remove('gone');
+    label.textContent = 'Play again';
+    $('fine').textContent = 'Every frame you just watched is a mined block. Scroll down to verify them.';
+  });
+  // "0:44 in the film" links jump the film to the scene that shows the idea.
+  document.querySelectorAll('[data-seek]').forEach((a) => a.addEventListener('click', (e) => {
+    e.preventDefault();
+    $('stage').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    seekTo(Number(a.dataset.seek));
+    if (audio.paused) play();
+  }));
 
-  document.getElementById('nBlocks').textContent = fmtInt(chain.n);
-  document.getElementById('nHashes').textContent = fmtInt(chain.total_hashes);
-  const vb = document.getElementById('verifyBtn');
-  const vo = document.getElementById('verifyOut');
+  $('nBlocks').textContent = fmtInt(chain.n);
+  $('nHashes').textContent = fmtInt(chain.total_hashes);
+  const vb = $('verifyBtn'), vo = $('verifyOut');
   vb.addEventListener('click', async () => {
     vb.disabled = true;
-    vo.textContent = 'Hashing the song…';
+    vo.textContent = 'Hashing the song file…';
+    const t0 = performance.now();
     const r = await chain.verifyAll(`${BASE}media/song.mp3`, (d, n) => { vo.textContent = `Checking block ${fmtInt(d)} of ${fmtInt(n)}…`; });
-    vo.textContent = [
-      `Song SHA-256 ${r.songOk ? 'matches' : 'DOES NOT match'} the commitment: ${r.songHex.slice(0, 16)}…`,
-      r.bad < 0 ? `All ${fmtInt(r.n)} blocks verified: every header hashes below the target and links to the one before.` : `Block ${r.bad} failed.`,
-      `Work: ${fmtInt(r.hashes)} SHA-256d attempts. First block links to Bitcoin's genesis block ${chain.genesis.slice(0, 16)}…`,
-    ].join('\n');
+    const secs = ((performance.now() - t0) / 1000).toFixed(1);
+    vo.innerHTML = '';
+    const line = (txt, ok) => { const s = document.createElement('span'); if (ok) s.className = 'ok'; s.textContent = txt + '\n'; vo.appendChild(s); };
+    line(`${r.songOk ? '✓' : '✗'} The song file's SHA-256 ${r.songOk ? 'matches' : 'does not match'} the commitment in every block: ${r.songHex.slice(0, 16)}…`, r.songOk);
+    line(r.bad < 0 ? `✓ All ${fmtInt(r.n)} blocks hash below the target and link to the block before (${secs} s).` : `✗ Block ${r.bad} failed.`, r.bad < 0);
+    line(`✓ The first block links to Bitcoin's genesis block ${chain.genesis.slice(0, 20)}…`, true);
+    line(`Work behind this film: ${fmtInt(r.hashes)} SHA-256d attempts.`);
     vb.disabled = false;
   });
 }

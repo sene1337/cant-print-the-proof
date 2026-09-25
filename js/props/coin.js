@@ -44,7 +44,7 @@ function coinGeometry(R, T, clip, seed) {
   if (geoCache.has(key)) return geoCache.get(key);
   const bevel = T * 0.18;
   const g = new THREE.ExtrudeGeometry(coinShape(R, q, seed), {
-    depth: T - bevel * 2, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel * 0.9, bevelSegments: 4, curveSegments: 1,
+    depth: T - bevel * 2, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel * 0.9, bevelOffset: -bevel * 0.9, bevelSegments: 4, curveSegments: 1,
   });
   g.translate(0, 0, -(T - bevel * 2) / 2);
   g.computeVertexNormals();
