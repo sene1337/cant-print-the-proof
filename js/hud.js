@@ -11,34 +11,37 @@ export function drawHud(g, w, h, chain, t, { alpha = 1 } = {}) {
   g.save();
   g.globalAlpha = alpha;
   // soft shade so the type reads on bright frames
-  const grd = g.createLinearGradient(0, h - 90 * s, 0, h);
+  const shade = (w / h < 1.2 ? 130 : 90) * s;
+  const grd = g.createLinearGradient(0, h - shade, 0, h);
   grd.addColorStop(0, 'rgba(0,0,0,0)');
   grd.addColorStop(1, 'rgba(0,0,0,0.55)');
   g.fillStyle = grd;
-  g.fillRect(0, h - 90 * s, w, 90 * s);
+  g.fillRect(0, h - shade, w, shade);
 
-  const pad = 40 * s;
+  const narrow = w / h < 1.2;
+  const pad = (narrow ? 34 : 40) * s;
+  const fs = Math.round((narrow ? 22 : 15) * s);
+  const y1 = narrow ? h - 78 * s : y;
   g.textBaseline = 'middle';
-  g.font = `600 ${Math.round(15 * s)}px "Figtree"`;
+  g.font = `600 ${fs}px "Figtree"`;
   g.fillStyle = 'rgba(255,244,228,0.78)';
   g.textAlign = 'left';
-  g.fillText(`BLOCK ${fmtInt(i)}`, pad, y);
+  g.fillText(`BLOCK ${fmtInt(i)}`, pad, y1);
   const bw = g.measureText(`BLOCK ${fmtInt(chain.n - 1)}`).width + 22 * s;
 
-  g.font = `500 ${Math.round(15 * s)}px "JetBrains Mono"`;
-  const hash = b.hash;
-  let zeros = hash.match(/^0*/)[0].length;
+  g.font = `500 ${fs}px "JetBrains Mono"`;
+  const hash = narrow ? b.hash.slice(0, 22) + '…' : b.hash;
+  let zeros = b.hash.match(/^0*/)[0].length;
   let x = pad + bw;
   const cw = g.measureText('0').width;
   for (let k = 0; k < hash.length; k++) {
     g.fillStyle = k < zeros ? 'rgba(255,170,70,0.95)' : 'rgba(255,244,228,0.46)';
-    g.fillText(hash[k], x, y);
+    g.fillText(hash[k], x, y1);
     x += cw;
   }
-  g.textAlign = 'right';
-  g.font = `500 ${Math.round(15 * s)}px "JetBrains Mono"`;
+  g.textAlign = narrow ? 'left' : 'right';
   g.fillStyle = 'rgba(255,244,228,0.6)';
-  g.fillText(`${fmtInt(chain.hashesUpTo(i))} hashes`, w - pad, y);
+  g.fillText(`${fmtInt(chain.hashesUpTo(i))} hashes`, narrow ? pad : w - pad, narrow ? h - 40 * s : y);
 
   // progress: the chain so far
   const p = clamp((i + 1) / chain.n);

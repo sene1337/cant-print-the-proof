@@ -214,9 +214,9 @@ function chorus(S, T, n, t0, tEnd) {
 
   // 10. That's the truth: the whole supply, finite, with an edge.
   C(tTruth, 'proof', (c, cam) => {
-    const d = 7600 + c.lt * 250;
-    cam.position.set(d * 0.08, -d * 0.22 - 300, d);
-    cam.lookAt(0, -300, 0);
+    const d = 7900 + c.lt * 250;
+    cam.position.set(d * 0.08, -d * 0.22 - 750, d);
+    cam.lookAt(0, -750, 0);
     cam.fov = 40; cam.near = 10; cam.far = 60000;
   }, (s, c) => {
     s.block.visible = false;

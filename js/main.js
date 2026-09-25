@@ -191,6 +191,57 @@ function player(film, chain, hg, hud, W, H) {
     if (audio.paused) play();
   }));
 
+  // Print or prove.
+  let printed = 0;
+  $('printBtn').addEventListener('click', () => {
+    const t0 = performance.now();
+    printed += 1e9;
+    const ms = performance.now() - t0;
+    $('printOut').textContent = `${fmtInt(printed)} notes`;
+    $('printNote').textContent = `Took ${(ms / 1000).toFixed(3)} seconds and cost nothing. Each note you already had is now worth a little less.`;
+  });
+  let worker = null;
+  $('proveBtn').addEventListener('click', () => {
+    if (worker) return;
+    const btn = $('proveBtn'), list = $('mined');
+    btn.disabled = true;
+    list.innerHTML = '';
+    worker = new Worker(new URL('./miner.js', import.meta.url), { type: 'module' });
+    const last = chain.hash(chain.n - 1);
+    worker.postMessage({ prevHex: last, songHex: chain.song_sha256, index: chain.n, count: 21, fps: chain.fps, bits: chain.bits });
+    worker.onmessage = async (e) => {
+      const m = e.data;
+      if (m.tries) $('proveOut').textContent = `${fmtInt(m.tries)} hashes`;
+      if (m.block) {
+        const li = document.createElement('li');
+        const z = m.block.hash.match(/^0*/)[0];
+        li.innerHTML = `<span>#${fmtInt(m.block.i)}</span><span class="h"><span class="z">${z}</span>${m.block.hash.slice(z.length, 40)}…</span>`;
+        list.appendChild(li);
+        list.scrollTop = list.scrollHeight;
+      }
+      if (m.done) {
+        worker.terminate(); worker = null;
+        btn.disabled = false; btn.textContent = 'Mine them again';
+        const secs = m.ms / 1000, rate = m.tries / Math.max(secs, 1e-3);
+        let text = `Your browser tried ${fmtInt(m.tries)} nonces in ${secs.toFixed(2)} s to add 21 blocks. Anyone who presses this button finds exactly these 21 blocks: proof has one answer.`;
+        $('proveNote').textContent = text;
+        try {
+          const ctl = new AbortController();
+          const timer = setTimeout(() => ctl.abort(), 4000);
+          const r = await fetch('https://mempool.space/api/v1/mining/hashrate/3d', { signal: ctl.signal });
+          clearTimeout(timer);
+          const d = (await r.json()).currentDifficulty;
+          if (d > 0) {
+            const years = (d * 4294967296) / rate / 31557600;
+            const words = years > 1e9 ? `${(years / 1e9).toFixed(1)} billion years` : years > 1e6 ? `${(years / 1e6).toFixed(1)} million years` : `${fmtInt(years)} years`;
+            text += ` Bitcoin's own puzzle is far harder: at this speed, your browser alone would need about ${words} to find one Bitcoin block.`;
+            $('proveNote').textContent = text;
+          }
+        } catch (err) { /* offline or blocked: skip the comparison */ }
+      }
+    };
+  });
+
   $('nBlocks').textContent = fmtInt(chain.n);
   $('nHashes').textContent = fmtInt(chain.total_hashes);
   const vb = $('verifyBtn'), vo = $('verifyOut');

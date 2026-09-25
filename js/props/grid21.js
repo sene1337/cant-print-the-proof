@@ -43,7 +43,11 @@ export class Grid21 extends THREE.Mesh {
           const float T = ${TILE}.0, G = ${GAP}.0, P = ${TILE + GAP}.0;
           vec2 tileId = floor(vP / P);
           vec2 inTile = vP - tileId * P;
-          float inside = step(inTile.x, T) * step(inTile.y, T);
+          // Box-filtered tile edges so the gaps don't alias into uneven lines from far away.
+          float fwx = max(fwidth(vP.x), 1e-4), fwy = max(fwidth(vP.y), 1e-4);
+          float ax = clamp((T - inTile.x) / fwx + 0.5, 0.0, 1.0) * clamp(inTile.x / fwx + 0.5, 0.0, 1.0);
+          float ay = clamp((T - inTile.y) / fwy + 0.5, 0.0, 1.0) * clamp(inTile.y / fwy + 0.5, 0.0, 1.0);
+          float inside = ax * ay;
           vec2 cell = tileId * T + floor(min(inTile, vec2(T - 0.001)));
           vec2 f = fract(inTile) - 0.5;
           float fw = max(fwidth(vP.x), fwidth(vP.y));

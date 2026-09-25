@@ -221,7 +221,9 @@ export function shots(S, T) {
     }, { bloom: 0.3, threshold: 1.1, fadeOut: 0.5 });
   // End card.
   S(tCard, 'outro-turntable', (c, cam) => {
-    cam.position.set(0, 20.0, 9.4);
+    // Fit the 6-unit-wide card to the frame width on narrow (vertical) frames.
+    const fit = Math.max(1, (16 / 9) / c.aspect * 0.62);
+    cam.position.set(0, 20.0, 9.4 * fit);
     cam.lookAt(0, 20.0, 0);
     cam.fov = 36;
   }, (s, c) => {
