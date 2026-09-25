@@ -6,7 +6,7 @@ import { studioEnv, orbitCam, moveCam } from '../film.js';
 import { Coin } from '../props/coin.js';
 import { Block, link } from '../props/block.js';
 import { Dust } from '../props/dust.js';
-import { cowrie as v1Cowrie, cowrieEnv } from '../props/verse1-cowrie.js';
+import { cowrie as v1Cowrie } from '../props/verse1-cowrie.js';
 import { readableBothSides } from '../props/notes.js';
 import { coinFace, edgeText, banknote, textCard, loadImage, TEX } from '../tex.js';
 import { clamp, lerp, smooth, easeOut, easeIn, easeInOut, easeOutBack, pulse, range, hash1 } from '../util.js';
@@ -110,7 +110,7 @@ async function turntable(film) {
   scene.add(stars);
 
   // The same cowrie that opens verse 1, so the film ends where it began.
-  const shell = v1Cowrie({ length: 1.35, env: cowrieEnv(film.renderer) });
+  const shell = v1Cowrie({ length: 1.35 }); // lit by this stage's warm studio, not verse 1's cool one
   const coin = new Coin({ radius: 0.62, thickness: 0.1, face: await coinFace('stater'), metal: 'gold', edge: edgeText('CAN’T PRINT THE PROOF'), seed: 31 });
   const noteTex = await banknote({ seed: 5 });
   const noteGeo = new THREE.PlaneGeometry(2.1, 0.9, 24, 6);
@@ -124,6 +124,9 @@ async function turntable(film) {
   const last = film.chain.block(film.chain.n - 1);
   const block = new Block({ hash: last.hash, height: '#' + last.i.toLocaleString('en-US'), nonce: last.nonce, style: 'engraved' });
   block.scale.setScalar(0.95);
+  // Shell and note turn to face the camera whatever the turntable is doing: yaw first, then tilt.
+  shell.rotation.order = 'YXZ';
+  note.rotation.order = 'YXZ';
   const forms = [shell, coin, note, block];
   forms.forEach((f) => hero.add(f));
 
@@ -211,12 +214,22 @@ export function shots(S, T) {
   const tCard = 181.4;
 
   // Anticipation: an empty pedestal in the dark, one light. Then the forms, one per word.
+  // Where the camera sits while the forms change; they turn to face it.
+  const camAt = (t) => {
+    const u = easeInOut(clamp((t - 172.6) / (tI - 172.6)));
+    const v = easeInOut(clamp((t - tI) / (tJoin - tI)));
+    return {
+      pos: [lerp(lerp(0.6, -1.2, u), -0.85, v), lerp(lerp(2.9, 2.55, u), 2.25, v), lerp(lerp(7.5, 4.3, u), 3.05, v)],
+      look: [0, lerp(lerp(3.35, 1.8, u), 1.9, v), lerp(-40, 0, u)],
+      fov: lerp(16, 30, u),
+    };
+  };
   S(172.6, 'outro-turntable', (c, cam) => {
-    // Night again. Start tight on the moon, then pull back to find the pedestal in front of it.
-    const u = easeInOut(clamp((c.t - 172.6) / (tShell - 172.6)));
-    cam.position.set(lerp(0.6, -1.2, u), lerp(2.9, 2.55, u), lerp(7.5, 4.3, u));
-    cam.lookAt(0, lerp(3.35, 1.8, u), lerp(-40, 0, u));
-    cam.fov = lerp(9, 30, u);
+    // Night again. Start on the moon, then pull back to find the pedestal in front of it; then ease in on the forms.
+    const k = camAt(c.t);
+    cam.position.set(...k.pos);
+    cam.lookAt(...k.look);
+    cam.fov = k.fov;
   },
     (s, c) => {
       const t = c.t;
@@ -228,8 +241,11 @@ export function shots(S, T) {
         if (t >= tPaper - 0.05) { i = 2; t0 = tPaper - 0.05; }
         if (t >= tProof - 0.05) { i = 3; t0 = tProof - 0.05; }
         s.show(i, i === 0 ? clamp((t - tI) / (tShell - tI)) : Math.max(0.01, pop(t0)));
-        if (i === 1) s.coin.rotation.set(0, 0, 0);
-        if (i === 2) s.note.rotation.set(0.15, 0, 0.05);
+        const p = camAt(t).pos, face = Math.atan2(p[0], p[2]) - s.hero.rotation.y;
+        // the shell tilts to show its toothed underside as well as its spotted back
+        if (i === 0) s.shell.rotation.set(-0.95 + Math.sin(t * 1.1) * 0.08, face + 0.35 + Math.sin(t * 0.7) * 0.15, 0);
+        if (i === 1) s.coin.rotation.set(0, face + 0.45 + (t - t0) * 0.9, 0);
+        if (i === 2) s.note.rotation.set(0.12, face + Math.sin(t * 1.3) * 0.22, 0.05);
         if (i === 3) s.block.setGlow(1 + 1.6 * pulse(t - tProof, 2.5));
         for (const tb of [tGold - 0.05, tPaper - 0.05, tProof - 0.05]) s.burst(t, tb);
       }

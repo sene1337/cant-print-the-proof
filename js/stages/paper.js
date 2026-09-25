@@ -137,30 +137,9 @@ function clockTexture() {
   return t;
 }
 
-export async function paperStage(film) {
-  const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x020403);
-  scene.fog = new THREE.FogExp2(0x020403, 0.018);
-  scene.environment = studioEnv(film.renderer, [
-    { pos: [0, 6, 3], size: [8, 2], color: [0.85, 1, 0.9], intensity: 3 },
-    { pos: [-6, 1, 1], size: [0.8, 6], color: [0.8, 1, 0.85], intensity: 4 },
-    { pos: [6, 1, -2], size: [0.8, 6], color: [1, 0.9, 0.7], intensity: 4 },
-  ]);
-  scene.environmentIntensity = 0.9;
-
-  const key = new THREE.DirectionalLight(0xf4f8e8, 2.2);
-  key.position.set(-4, 6, 5);
-  scene.add(key);
-  const back = new THREE.DirectionalLight(0xbfe8c8, 2.8);
-  back.position.set(3, 2, -6);
-  scene.add(back);
-  scene.add(new THREE.AmbientLight(0x2a3a30, 0.6));
-
-  const noteTex = await banknote({ seed: 3 });
-  const cloud = new NoteCloud(noteTex, 6000, { emissive: 0.1 });
-  scene.add(cloud);
-
-  // Pen: gold nib, black section, gold band, long black lacquer barrel.
+// The fountain pen: gold nib (engraved), black section, gold band, long black lacquer barrel.
+// Its origin is the nib tip; +y runs up the barrel; +z is the nib's top face (see posePen).
+export function buildPen(film) {
   const pen = new THREE.Group();
   const gold = new THREE.MeshPhysicalMaterial({ color: new THREE.Color().setRGB(1, 0.72, 0.3), metalness: 1, roughness: 0.3 });
   const lacquer = new THREE.MeshPhysicalMaterial({ color: 0x030303, metalness: 0.1, roughness: 0.12, clearcoat: 1, clearcoatRoughness: 0.05 });
@@ -192,6 +171,34 @@ export async function paperStage(film) {
   cap.position.set(0, 12.9, -0.28);
   pen.add(cap);
   pen.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+
+  return { pen, nib };
+}
+
+export async function paperStage(film) {
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x020403);
+  scene.fog = new THREE.FogExp2(0x020403, 0.018);
+  scene.environment = studioEnv(film.renderer, [
+    { pos: [0, 6, 3], size: [8, 2], color: [0.85, 1, 0.9], intensity: 3 },
+    { pos: [-6, 1, 1], size: [0.8, 6], color: [0.8, 1, 0.85], intensity: 4 },
+    { pos: [6, 1, -2], size: [0.8, 6], color: [1, 0.9, 0.7], intensity: 4 },
+  ]);
+  scene.environmentIntensity = 0.9;
+
+  const key = new THREE.DirectionalLight(0xf4f8e8, 2.2);
+  key.position.set(-4, 6, 5);
+  scene.add(key);
+  const back = new THREE.DirectionalLight(0xbfe8c8, 2.8);
+  back.position.set(3, 2, -6);
+  scene.add(back);
+  scene.add(new THREE.AmbientLight(0x2a3a30, 0.6));
+
+  const noteTex = await banknote({ seed: 3 });
+  const cloud = new NoteCloud(noteTex, 6000, { emissive: 0.1 });
+  scene.add(cloud);
+
+  const { pen, nib } = buildPen(film);
   scene.add(pen);
 
   // The desk: dark leather under a lamp.
@@ -267,7 +274,8 @@ export async function paperStage(film) {
       return curve.getPointAt(clamp(k));
     },
     // A storm of notes around a centre, moving with the wind. Pure function of t.
-    storm(t, { n = 6000, center = [0, 0, 0], radius = 14, height = 9, wind = [3.5, 0.6, -1.2], swirl = 0.5, scale = 1 } = {}) {
+    // clear: {from, to, r} keeps a lane open (e.g. from the camera to the subject): notes inside it are pushed to its edge.
+    storm(t, { n = 6000, center = [0, 0, 0], radius = 14, height = 9, wind = [3.5, 0.6, -1.2], swirl = 0.5, scale = 1, clear = null } = {}) {
       cloud.setTime(t);
       cloud.setFlutter(1);
       cloud.layout(n, (i, d) => {
@@ -281,7 +289,15 @@ export async function paperStage(film) {
         x = ((x % W) + W * 1.5) % W - W / 2;
         z = ((z % W) + W * 1.5) % W - W / 2;
         y = ((y % height) + height * 1.5) % height - height / 2;
-        d.position.set(center[0] + x, center[1] + y, center[2] + z);
+        x += center[0]; y += center[1]; z += center[2];
+        if (clear) {
+          const [ax, ay, az] = clear.from, bx = clear.to[0] - ax, by = clear.to[1] - ay, bz = clear.to[2] - az;
+          const u = Math.max(0, Math.min(1, ((x - ax) * bx + (y - ay) * by + (z - az) * bz) / (bx * bx + by * by + bz * bz)));
+          const vx = x - (ax + bx * u), vy = y - (ay + by * u), vz = z - (az + bz * u);
+          const dd = Math.hypot(vx, vy, vz) || 1e-6;
+          if (dd < clear.r) { const f = (clear.r * 0.6 + dd * 0.4) / dd; x += vx * (f - 1); y += vy * (f - 1); z += vz * (f - 1); }
+        }
+        d.position.set(x, y, z);
         d.rotation.set(t * (0.8 + r1 * 2.2) + i, t * (0.5 + r2 * 1.7) + r3 * 6, t * (0.3 + r4) + r1 * 6);
         d.scale.setScalar(0.45 * scale);
       });

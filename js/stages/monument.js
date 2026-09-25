@@ -30,7 +30,9 @@ export function buildNumerals(glyphs, text, { scale = 2.2, depth = 0.45, bevel =
   let x = 0;
   for (const ch of text) {
     const g = glyphs.glyphs[ch];
-    const mesh = new THREE.Mesh(glyphGeometry(g, scale, depth, bevel), material);
+    const cs = ch === ',' ? 1.45 : 1;
+    const mesh = new THREE.Mesh(glyphGeometry(g, scale * cs, depth, bevel), material);
+    if (ch === ',') mesh.position.set(-0.04 * scale, 0.02 * scale, 0);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     const holder = new THREE.Group();
@@ -107,7 +109,7 @@ export async function monumentStage(film) {
   sg.fillStyle = grd; sg.fillRect(0, 0, 256, 256);
   const sun = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(sunCanvas), color: new THREE.Color(3, 2.4, 1.8), transparent: true, depthWrite: false, fog: false }));
   sun.scale.setScalar(260);
-  sun.position.set(0, 40, -800);
+  sun.position.set(330, 70, -760);
   scene.add(sun);
   const dawnLight = new THREE.DirectionalLight(0xffa860, 0);
   dawnLight.position.set(0, 2, -10);
@@ -123,12 +125,14 @@ export async function monumentStage(film) {
     fx: { bloom: 0.45, threshold: 1.0, bloomRadius: 0.45, grain: 0.04, vignette: 0.45, tint: [1.02, 0.99, 0.95] },
     update(ctx) {
       numerals.visible = true;
+      metal.roughness = 0.26;
       numerals.position.set(0, BASE, 0);
       numerals.rotation.set(0, 0, 0);
       numerals.scale.setScalar(1);
       for (const p of parts) { p.position.set(p.userData.x0, 0, 0); p.rotation.set(0, 0, 0); p.scale.setScalar(1); p.visible = true; }
       floor.visible = true;
-      key.position.set(-5, 9, 9); key.target.position.set(0, 1, 0); key.intensity = 60; key.distance = 60; key.angle = 0.5;
+      floor.material.clearcoat = 0.15; floor.material.color.set(0x060504); floor.material.roughness = 0.55;
+      key.position.set(-5, 9, 9); key.target.position.set(0, 1, 0); key.intensity = 60; key.distance = 60; key.angle = 0.5; key.penumbra = 0.7;
       rim.intensity = 2.2; rim.color.set(0xff8a3a);
       sweep.intensity = 0;
       sky.visible = false; sun.visible = false; dawnLight.intensity = 0;

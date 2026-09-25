@@ -1,5 +1,5 @@
 // The chain bar: a quiet strip at the bottom of every frame naming the block this frame is.
-import { fmtInt, clamp } from './util.js';
+import { fmtInt } from './util.js';
 
 export function drawHud(g, w, h, chain, t, { alpha = 1 } = {}) {
   g.clearRect(0, 0, w, h);
@@ -20,7 +20,7 @@ export function drawHud(g, w, h, chain, t, { alpha = 1 } = {}) {
 
   const narrow = w / h < 1.2;
   const pad = (narrow ? 34 : 40) * s;
-  const fs = Math.round((narrow ? 22 : 15) * s);
+  const fs = Math.round((narrow ? 23 : 17) * s);
   const y1 = narrow ? h - 78 * s : y;
   g.textBaseline = 'middle';
   g.font = `600 ${fs}px "Figtree"`;
@@ -43,11 +43,5 @@ export function drawHud(g, w, h, chain, t, { alpha = 1 } = {}) {
   g.fillStyle = 'rgba(255,244,228,0.6)';
   g.fillText(`${fmtInt(chain.hashesUpTo(i))} hashes`, narrow ? pad : w - pad, narrow ? h - 40 * s : y);
 
-  // progress: the chain so far
-  const p = clamp((i + 1) / chain.n);
-  g.fillStyle = 'rgba(255,244,228,0.14)';
-  g.fillRect(0, h - 3 * s, w, 3 * s);
-  g.fillStyle = 'rgba(247,147,26,0.9)';
-  g.fillRect(0, h - 3 * s, w * p, 3 * s);
   g.restore();
 }
