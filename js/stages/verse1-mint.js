@@ -222,6 +222,8 @@ export async function mintStage(film) {
       coin.rotation.set(-Math.PI / 2, 0, 0);
       coin.setClip(0);
       coin.setEmissive([0, 0, 0], 0);
+      coin.setRelief(1);
+      rake.angle = 0.5; rake.penumbra = 0.6;
       blankCoin.visible = true;
       blankCoin.position.set(0, 0.09, 0);
       blankCoin.rotation.set(-Math.PI / 2, 0, 0);
