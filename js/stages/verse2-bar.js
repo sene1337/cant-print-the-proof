@@ -23,7 +23,8 @@ export function barGeometry() {
   return g;
 }
 
-// The assay stamp on the bar's top face: colour (dark recessed letters) and height (letters low).
+// The assay stamp on the bar's top face: just the year, big, in a double border (colour: dark recessed letters;
+// height: letters low). Small hallmark text did not read on a phone.
 export function stamp() {
   const w = 1024, h = 310;
   const draw = (g, bg, ink) => {
@@ -34,18 +35,31 @@ export function stamp() {
     g.lineWidth = 3;
     g.beginPath(); g.roundRect(86, 64, w - 172, h - 128, 48); g.stroke();
     g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.font = '900 150px "Playfair Display"';
-    g.fillText('1912', w / 2, h / 2 + 6);
-    g.font = '700 46px "Cormorant Garamond"';
-    g.fillText('FINE', 205, h / 2 - 24); g.fillText('GOLD', 205, h / 2 + 26);
-    g.font = '700 58px "Cormorant Garamond"';
-    g.fillText('999.9', w - 210, h / 2 + 4);
+    g.font = '900 196px "Playfair Display"';
+    g.fillText('1912', w / 2, h / 2 + 8);
   };
   const [cc, cg] = canvas2d(w, h);
   draw(cg, '#ffffff', '#6b4a22');
   const [hc, hg] = canvas2d(w, h);
   draw(hg, '#ffffff', '#303030');
-  return { color: canvasTex(cc), normal: normalFromHeight(hc, 2.2, 1.2) };
+  return { color: canvasTex(cc), normal: normalFromHeight(hc, 2.8, 1.2) };
+}
+
+// FINE GOLD struck large along the bar's long front face.
+export function sideStamp() {
+  const w = 1024, h = 180;
+  const draw = (g, bg, ink) => {
+    g.fillStyle = bg; g.fillRect(0, 0, w, h);
+    g.fillStyle = ink;
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.font = '700 118px "Cormorant Garamond"';
+    g.save(); g.translate(w / 2, h / 2 + 6); g.scale(1.25, 1); g.fillText('FINE  GOLD', 0, 0); g.restore();
+  };
+  const [cc, cg] = canvas2d(w, h);
+  draw(cg, '#ffffff', '#6b4a22');
+  const [hc, hg] = canvas2d(w, h);
+  draw(hg, '#ffffff', '#303030');
+  return { color: canvasTex(cc), normal: normalFromHeight(hc, 2.4, 1.0) };
 }
 
 function woodTexture() {
@@ -117,11 +131,17 @@ function beam(height, radius) {
 export async function barStage(film) {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x020101);
+  // Gold reads as gold when it mirrors bright warm light: big soft boxes placed where the top face (behind the bar,
+  // about 30 degrees up) and the long front face (behind the camera, low) reflect them, over a warm dome.
   scene.environment = studioEnv(film.renderer, [
     { pos: [0, 6, 0], size: [2.5, 2.5], color: [1, 0.92, 0.78], intensity: 3.0 },
+    { pos: [2.0, 3.1, -4.7], size: [7, 3.8], color: [1, 0.86, 0.6], intensity: 0.72 },
+    { pos: [0.6, 0.6, 6], size: [9, 2.6], color: [1, 0.84, 0.58], intensity: 0.75 },
+    // a narrow strip light: the bright band that glides along the far edge of the top face
+    { pos: [-0.5, 4.2, -3.2], size: [8, 0.45], color: [1, 0.95, 0.85], intensity: 2.4 },
     { pos: [-6, 1.5, 2], size: [0.5, 3], color: [1, 0.8, 0.55], intensity: 1.6 },
     { pos: [6, 1, -2], size: [0.5, 3], color: [1, 0.85, 0.65], intensity: 1.2 },
-  ], { top: [0.06, 0.05, 0.04], horizon: [0.02, 0.015, 0.01], bottom: [0, 0, 0] });
+  ], { top: [0.2, 0.17, 0.12], horizon: [0.08, 0.06, 0.04], bottom: [0.02, 0.015, 0.01] });
   scene.environmentIntensity = 1.0;
 
   const LIGHT = new THREE.Vector3(0.3, 6.2, 0.5);
@@ -148,9 +168,15 @@ export async function barStage(film) {
 
   // The bar.
   const st = stamp();
-  const gold = clampHot(new THREE.MeshPhysicalMaterial({ color: new THREE.Color().setRGB(1, 0.72, 0.3), metalness: 1, roughness: 0.22 }), 3.5);
-  const goldTop = clampHot(new THREE.MeshPhysicalMaterial({ color: new THREE.Color().setRGB(1, 0.72, 0.3), metalness: 1, roughness: 0.24, map: st.color, normalMap: st.normal, normalScale: new THREE.Vector2(1, 1) }), 6);
-  const bar = new THREE.Mesh(barGeometry(), [gold, gold, goldTop, gold, gold, gold]);
+  // fine gold: warm yellow; highlights capped so the lamp's streak can never wash out the stamp
+  const GOLD = new THREE.Color().setRGB(1, 0.74, 0.28);
+  const gold = clampHot(new THREE.MeshPhysicalMaterial({ color: GOLD, metalness: 1, roughness: 0.2 }), 1.5);
+  // the stamped top stays just under the bloom threshold, so "1912" keeps its contrast even under the lamp's streak
+  const goldTop = clampHot(new THREE.MeshPhysicalMaterial({ color: GOLD, metalness: 1, roughness: 0.3, map: st.color, normalMap: st.normal, normalScale: new THREE.Vector2(1, 1) }), 1.25);
+  const ss = sideStamp();
+  const goldFront = clampHot(new THREE.MeshPhysicalMaterial({ color: GOLD, metalness: 1, roughness: 0.26, map: ss.color, normalMap: ss.normal }), 1.5);
+  // box face order: +x, -x, +y (top), -y, +z (front), -z
+  const bar = new THREE.Mesh(barGeometry(), [gold, gold, goldTop, gold, goldFront, gold]);
   bar.castShadow = true; bar.receiveShadow = true;
   scene.add(bar);
 
@@ -160,8 +186,8 @@ export async function barStage(film) {
   scene.add(iou);
 
   // Dust thrown up by the slam, and motes in the beam.
-  const NP = 420;
-  const puff = new SoftPoints(NP, { color: [0.5, 0.42, 0.33], opacity: 0.35 });
+  const NP = 900;
+  const puff = new SoftPoints(NP, { color: [0.62, 0.55, 0.45], opacity: 0.9 });
   scene.add(puff);
   const motes = new Dust({ count: 700, size: 0.012, box: [3, 6, 3], color: [1, 0.9, 0.75], gain: 0.9 });
   motes.position.set(0.1, 3, 0.2);
@@ -184,7 +210,7 @@ export async function barStage(film) {
     // Floating and turning in the beam.
     floatAt(t, t0) {
       bar.position.set(0, 1.15 + 0.03 * Math.sin((t - t0) * 2.1), 0);
-      bar.rotation.set(0.05 * Math.sin((t - t0) * 1.3), -0.5 + (t - t0) * 0.32, 0.04);
+      bar.rotation.set(0.04 * Math.sin((t - t0) * 1.3), -0.42 + (t - t0) * 0.16, 0.03);
     },
 
     // The drop: contact at tHit. Returns the impact pulse.
@@ -198,17 +224,18 @@ export async function barStage(film) {
       // dust ring along the table
       puff.visible = dt > 0;
       if (dt > 0) {
+        // a fine spray of dust skating out low along the table, catching the lamp, gone in half a second
         puff.layout(NP, (i, o) => {
           const h = (q) => hash1(i * 7 + q);
           const a = h(1) * Math.PI * 2;
-          const sp = 0.6 + h(2) * 1.6;
-          const r = 0.05 + sp * (1 - Math.exp(-dt * 5)) * 0.55;
+          const sp = 0.8 + h(2) * 2.2;
+          const r = sp * (1 - Math.exp(-dt * 6)) / 6 * 3.2;
           const ex = Math.abs(Math.cos(a)) * BAR.L * 0.5, ez = Math.abs(Math.sin(a)) * BAR.W * 0.5;
           o.x = Math.cos(a) * (ex + r);
           o.z = Math.sin(a) * (ez + r * 0.7);
-          o.y = 0.02 + h(3) * 0.06 + dt * (0.06 + h(4) * 0.14);
-          o.size = 0.05 + h(5) * 0.07 + dt * 0.12;
-          o.alpha = clamp(1 - dt / (0.6 + h(6) * 0.7)) * 0.7;
+          o.y = 0.01 + h(3) * 0.03 + (h(4) * 0.5) * dt * (1 - dt);
+          o.size = 0.012 + h(5) * 0.022;
+          o.alpha = clamp(1 - dt / (0.35 + h(6) * 0.4)) * (0.35 + 0.5 * h(7));
         }, pointScale(film, film.camera));
       }
       return dt >= 0 ? Math.exp(-dt * 12) : 0;

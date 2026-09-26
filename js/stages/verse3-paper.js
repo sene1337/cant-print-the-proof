@@ -107,7 +107,7 @@ export async function verse3PaperStage(film) {
   const flare = glowCard([1, 0.55, 0.15], 4);
   scene.add(flare);
 
-  const embers = new Motes({ count: 420, size: 0.035, color: [1, 0.5, 0.12], gain: 6 });
+  const embers = new Motes({ count: 160, size: 0.03, color: [1, 0.55, 0.18], gain: 3.2 });
   scene.add(embers);
   const dust = new Dust({ count: 700, size: 0.012, box: [6, 6, 6], color: [1, 0.93, 0.82], gain: 0.9 });
   scene.add(dust);
@@ -134,7 +134,7 @@ export async function verse3PaperStage(film) {
     const lift = j * 0.0025;
     const pos = f.clone().multiplyScalar(0.506 + j * 0.001).add(V(0, PH / 2 + lift, 0));
     // stand upright outside the face first, then slide straight in: no page cuts through another
-    cubePose[k] = { pos, stage: pos.clone().addScaledVector(f, 1.1), quat: basisQuat(r, u, n), fold: { at: CREASE_WALL, side: 1 } };
+    cubePose[k] = { pos, stage: pos.clone().addScaledVector(f, 0.35), quat: basisQuat(r, u, n), fold: { at: CREASE_WALL, side: 1 } };
   });
   BASE.forEach((k, j) => {
     // flat, nearly square to the cube, small enough to sit inside the walls (0.70 x 0.91)
@@ -145,7 +145,7 @@ export async function verse3PaperStage(film) {
   {
     const u = V(0, 0, -1), n = V(0, 1, 0), r = u.clone().cross(n);
     const pos = V(0, 1.0 + 0.016, (PH - 1) / 2 + 0.016); // its front flap hangs outside the front wall
-    cubePose[0] = { pos, stage: pos.clone().add(V(0, 1.1, 0)), quat: basisQuat(r, u, n), fold: { at: CREASE_LID, side: -1 } };
+    cubePose[0] = { pos, stage: pos.clone().add(V(0, 0.25, 0)), quat: basisQuat(r, u, n), fold: { at: CREASE_LID, side: -1 } };
   }
 
   const tmpQ = new THREE.Quaternion();
@@ -239,7 +239,9 @@ export async function verse3PaperStage(film) {
           phase = f * 6;
           scale = lerp(1, P.scale || 1, e);
           if (P.fold) {
-            const fk = clamp((t - fl.t0 - fl.dur) / 0.1);
+            // walls fold their top flap in while they rise (the box's dark inside is never exposed);
+            // the lid folds its front flap down just after it lands
+            const fk = P.fold.side > 0 ? clamp((f - 0.55) / 0.45) : clamp((t - fl.t0 - fl.dur) / 0.1);
             if (fk > 0) fold = { at: P.fold.at, side: P.fold.side, angle: smooth(fk) * Math.PI / 2 * 0.995 };
           }
         }
@@ -255,11 +257,13 @@ export async function verse3PaperStage(film) {
       const bb = (t - tm.burn0) / tm.burnDur;
       if (bb > -0.05) {
         block.visible = true;
+        // the block's light comes up with the burn and swells once, smoothly, on "proof" (no one-frame pop)
         const pr = t - tm.proof;
-        const glow = clamp(bb * 1.2) * (1 + 1.4 * Math.exp(-Math.max(0, pr) * 3) * (pr > 0 ? 1 : 0));
+        const swell = pr > 0 ? smooth(clamp(pr / 0.25)) * Math.exp(-Math.max(0, pr - 0.25) * 1.5) : 0;
+        const glow = smooth(clamp(bb * 1.1)) * (1 + 0.15 * swell);
         block.setGlow(Math.max(0.02, glow));
         core.position.set(0, 0.6, 0.2);
-        core.intensity = 6 * clamp(bb * 3) * clamp(1.6 - bb) + 1.5 * clamp(bb);
+        core.intensity = 1.6 * smooth(clamp(bb));
         flare.visible = false;
         flare.position.set(0, 0.5, 0);
         flare.material.opacity = 0.35 * Math.sin(clamp(bb / 1.4) * Math.PI);
@@ -282,7 +286,7 @@ export async function verse3PaperStage(film) {
           o[0] = P[0] + vx * age + Math.sin(age * 5 + i) * 0.05;
           o[1] = P[1] + age * (0.9 + h(7) * 1.4) + age * age * 0.4;
           o[2] = P[2] + vz * age + Math.cos(age * 4 + i) * 0.05;
-          return clamp(1 - age / 1.3) * (0.4 + 0.6 * h(8)) * (0.7 + 0.3 * Math.sin(age * 25 + i));
+          return smooth(clamp(age / 0.2)) * clamp(1 - age / 1.3) * (0.4 + 0.6 * h(8));
         });
       }
       return allLanded;

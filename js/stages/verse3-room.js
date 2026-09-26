@@ -196,7 +196,7 @@ export async function verse3RoomStage(film) {
       const typing = n < times.length && n > 0;
       screenMat.uniforms.uCursor.value = typing || n === 0 ? 1 : (Math.floor(since / 0.5) % 2 === 0 ? 1 : 0);
       // the tube flickers a hair, as they did
-      screenMat.uniforms.uFlick.value = 0.03 * hash1(Math.floor(t * 30));
+      screenMat.uniforms.uFlick.value = 0;
       glow.intensity = 9 + n * 0.15;
     },
   };

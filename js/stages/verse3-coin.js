@@ -14,7 +14,7 @@ function ghostMaterial(faceColor) {
   return new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
     uniforms: {
-      uMap: { value: faceColor }, uColor: { value: new THREE.Color(1.0, 0.34, 0.04) },
+      uMap: { value: faceColor }, uColor: { value: new THREE.Color(1.0, 0.5, 0.14) },
       uAlpha: { value: 1 }, uTime: { value: 0 }, uJitter: { value: 0 },
     },
     vertexShader: /* glsl */ `
@@ -31,8 +31,8 @@ function ghostMaterial(faceColor) {
       void main() {
         float m = texture2D(uMap, vUv).r;
         float fres = 1.0 - abs(dot(normalize(vN), normalize(vV)));
-        float scan = 0.8 + 0.2 * sin(gl_FragCoord.y * 1.3 + uTime * 40.0);
-        float flick = 1.0 - uJitter * step(0.6, fract(sin(floor(uTime * 24.0) * 12.9898) * 43758.5453));
+        float scan = 0.88 + 0.12 * sin(gl_FragCoord.y * 1.3);
+        float flick = 1.0;
         vec3 col = uColor * (0.12 + 0.55 * smoothstep(0.85, 1.0, m)) + uColor * pow(fres, 2.0) * 1.2;
         gl_FragColor = vec4(col * uAlpha * scan * flick, 1.0);
       }`,
@@ -170,9 +170,9 @@ export async function verse3CoinStage(film) {
   const shardDefs = shardGeometries(5);
   const shards = shardDefs.map((d) => { const m = new THREE.Mesh(d.geo, shardMat); scene.add(m); return m; });
 
-  const sparks = new Motes({ count: 500, size: 0.03, color: [1, 0.62, 0.22], gain: 7 });
+  const sparks = new Motes({ count: 140, size: 0.028, color: [1, 0.7, 0.35], gain: 3.5 });
   scene.add(sparks);
-  const sparks2 = new Motes({ count: 300, size: 0.025, color: [1, 0.8, 0.5], gain: 6 });
+  const sparks2 = new Motes({ count: 90, size: 0.024, color: [1, 0.8, 0.5], gain: 3 });
   scene.add(sparks2);
 
   const shears = buildShears();
@@ -200,48 +200,38 @@ export async function verse3CoinStage(film) {
       scene.environmentIntensity = 1.0;
     },
 
-    // Double-spend: the coin splits into two copies; at tFail one shatters, the other becomes the coin.
-    doubleSpend(t, { tSplit, tFail, y = 1.5, apart = 1.25 }) {
-      const sp = clamp((t - tSplit) / (tFail - tSplit));
-      const turn = Math.sin(t * 1.1) * 0.12;
+    // Double-spend: the coin stays put; a glowing copy materializes beside it (tSplit), and at tFail the copy
+    // cracks apart and drifts away as it fades. Nothing textured slides across the frame (flash-safe).
+    doubleSpend(t, { tSplit, tFail, y = 1.5, x0 = -1.12, x1 = 1.12 }) {
       floor.visible = false;
-      if (t < tSplit) {
-        coin.position.set(0, y, 0); coin.rotation.set(0, turn, 0);
-        return;
-      }
-      const e = easeOut(sp, 2.2);
-      const jit = (i) => (hash1(Math.floor(t * 30) * 7 + i) - 0.5) * 0.04 * sp;
-      if (t < tFail) {
-        coin.visible = false;
-        ghosts.forEach((g, i) => {
-          const s = i ? 1 : -1;
-          g.visible = true;
-          g.position.set(s * apart * e + jit(i), y + jit(i + 2), 0);
-          g.rotation.set(0, turn, 0);
-          g.material.uniforms.uAlpha.value = 0.95 - 0.25 * sp;
-          g.material.uniforms.uJitter.value = 0.4 * sp;
-        });
-        return;
-      }
-      // The left copy is the one that holds: solid, back to centre. The right one shatters.
-      const af = t - tFail;
-      const back = easeInOut(clamp((af - 0.08) / 0.4));
-      coin.visible = true;
-      coin.position.set(-apart * (1 - back), y, 0);
+      const turn = Math.sin(t * 1.1) * 0.08;
+      coin.position.set(x0, y, 0);
       coin.rotation.set(0, turn, 0);
-      coin.setEmissive([1, 0.42, 0.05], 0.55 * Math.exp(-af * 6));
+      const af = t - tFail;
+      // the real coin warms gently when the copy fails
+      coin.setEmissive([1, 0.5, 0.12], af > 0 ? 0.18 * smooth(clamp(af / 0.2)) * Math.exp(-Math.max(0, af - 0.2) * 3) : 0);
+      const g = ghosts[0];
+      if (t < tFail) {
+        const k = smooth(clamp((t - tSplit) / 0.28));
+        g.visible = k > 0;
+        g.position.set(x1, y, 0);
+        g.rotation.set(0, turn, 0);
+        g.material.uniforms.uAlpha.value = 0.85 * k;
+        g.material.uniforms.uJitter.value = 0;
+        return;
+      }
+      // the copy breaks: its pieces part slowly and fall a little, fading out
       shards.forEach((m, i) => {
         const d = shardDefs[i];
         const h = (k) => hash1(i * 17 + k + 900);
-        const out = Math.hypot(d.cx, d.cy) + 0.2;
-        const vx = (d.cx / out) * (2.5 + h(1) * 2.5) + 0.8, vy = (d.cy / out) * (2.5 + h(2) * 2.5) + 0.5, vz = (h(3) - 0.3) * 3;
-        m.visible = af < 1.2;
-        m.position.set(apart + d.cx + vx * af, y + d.cy + vy * af - 4.5 * af * af, vz * af);
-        m.rotation.set(af * (h(4) - 0.5) * 14, af * (h(5) - 0.5) * 14, turn + af * (h(6) - 0.5) * 10);
+        const out = Math.hypot(d.cx, d.cy) + 0.25;
+        const sp = 0.55 + h(1) * 0.35;
+        m.visible = af < 0.75;
+        m.position.set(x1 + d.cx * (1 + af * sp / out), y + d.cy * (1 + af * sp / out) - 0.6 * af * af, (h(3) - 0.4) * af * 0.6);
+        m.rotation.set(af * (h(4) - 0.5) * 1.6, af * (h(5) - 0.5) * 1.6, turn + af * (h(6) - 0.5) * 1.2);
       });
-      shardMat.uniforms.uAlpha.value = 1.6 * clamp(1 - af / 1.1);
-      shardMat.uniforms.uJitter.value = 0.3;
-      sparks.burst(af, [apart, y, 0.1], { power: 1.1, spread: 2, up: 0.2, life: 0.7, gravity: 6, seed: 3 });
+      shardMat.uniforms.uAlpha.value = 0.85 * (1 - smooth(clamp(af / 0.7)));
+      shardMat.uniforms.uJitter.value = 0;
     },
 
     // The shears bite at the rim and can't cut. Coin lies flat on the riser; tBite is the snap.

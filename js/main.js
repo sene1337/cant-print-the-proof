@@ -19,22 +19,33 @@ async function boot() {
   if (CAPTURE) document.body.classList.add('capture');
   const [timing, chain] = await Promise.all([Timing.load(`${BASE}data/timing.json`), Chain.load(`${BASE}data/chain.json`)]);
   const dbg = (m) => { if (params.has('debug')) console.log('[boot]', m, (performance.now() / 1000).toFixed(2)); };
+  // Live: show how far loading has got on the Play button, and give the page a frame to paint it between steps.
+  const label = document.getElementById('playLabel');
+  let done = 0, steps = 14;
+  const step = async () => {
+    done++;
+    if (CAPTURE || !label) return;
+    label.textContent = `Loading the film · ${Math.min(99, Math.round((100 * done) / steps))}%`;
+    await new Promise((r) => requestAnimationFrame(() => r()));
+  };
   dbg('data');
   await preload(BASE);
-  dbg('preload');
+  dbg('preload'); await step();
 
   const gl = document.getElementById('gl');
   const hud = document.getElementById('hud');
   const stageEl = document.getElementById('stage');
-  const W = CAPTURE ? Number(params.get('w') || 1920) : stageEl.clientWidth;
-  const H = CAPTURE ? Number(params.get('h') || 1080) : stageEl.clientHeight;
+  // A page loaded with no room to draw (a hidden frame) starts at 1280x720 until it gets a size.
+  const W = CAPTURE ? Number(params.get('w') || 1920) : stageEl.clientWidth || 1280;
+  const H = CAPTURE ? Number(params.get('h') || 1080) : stageEl.clientHeight || 720;
   const quality = CAPTURE ? 'offline' : (params.get('q') || 'high');
   const pr = CAPTURE ? 1 : Math.min(window.devicePixelRatio || 1, 1.5);
   const film = new Film({ canvas: gl, timing, chain, width: W, height: H, quality, pixelRatio: pr });
-  film.addStage('gold', await goldStage(film)); dbg('gold');
-  film.addStage('paper', await paperStage(film)); dbg('paper');
-  film.addStage('proof', await proofStage(film)); dbg('proof');
+  film.addStage('gold', await goldStage(film)); dbg('gold'); await step();
+  film.addStage('paper', await paperStage(film)); dbg('paper'); await step();
+  film.addStage('proof', await proofStage(film)); dbg('proof'); await step();
   const sections = await loadSections();
+  steps = done + Object.keys(sections).length + 2;
   for (const [name, mod] of Object.entries(sections)) {
     try {
       for (const [id, build] of Object.entries(mod.stages || {})) {
@@ -46,7 +57,7 @@ async function boot() {
       FAILED[name] = String(e && e.stack || e);
       sections[name] = { stages: {}, shots: () => {} };
     }
-    dbg(name);
+    dbg(name); await step();
   }
   film.setShots(params.has('look') ? lookShots() : buildStory(timing, sections)); dbg('story');
   window.__failed = FAILED;
@@ -55,6 +66,7 @@ async function boot() {
   const sizeHud = () => { hud.width = Math.round(W * (CAPTURE ? 1 : pr)); hud.height = Math.round(H * (CAPTURE ? 1 : pr)); };
   sizeHud();
 
+  await step();
   // Warm every stage once so shaders compile before the first real frame.
   for (const s of film.shots.filter((s, i, a) => a.findIndex((x) => x.stage === s.stage) === i)) film.render(s.t + 0.01);
 
@@ -94,6 +106,8 @@ function player(film, chain, hg, hud, W, H) {
 
   playBtn.disabled = false;
   label.textContent = 'Play';
+  const coverSim = $('coverSim');
+  if (coverSim) coverSim.textContent = 'Or find your freedom year below ↓';
 
   // Song time, smoothed between the audio element's coarse updates.
   const now = () => {
@@ -119,6 +133,7 @@ function player(film, chain, hg, hud, W, H) {
   }
   function resize() {
     const el = $('stage');
+    if (!el.clientWidth || !el.clientHeight) return;
     film.setSize(el.clientWidth, el.clientHeight, pr);
     hud.width = Math.round(el.clientWidth * pr); hud.height = Math.round(el.clientHeight * pr);
   }
@@ -134,11 +149,13 @@ function player(film, chain, hg, hud, W, H) {
     scrub.setAttribute('aria-valuenow', Math.round(t));
     clock.textContent = fmt(t);
   }
+  // While the player is scrolled out of view the song plays on, but the film is not drawn.
+  let onScreen = true;
+  new IntersectionObserver((es) => { onScreen = es[es.length - 1].isIntersecting; }).observe($('stage'));
   function loop(ts) {
     if (!running) return;
-    adapt(ts - lastFrame);
+    if (onScreen) { adapt(ts - lastFrame); draw(); }
     lastFrame = ts;
-    draw();
     requestAnimationFrame(loop);
   }
   function start() {

@@ -6,50 +6,43 @@ import { Coin, METALS } from '../props/coin.js';
 import { Dust } from '../props/dust.js';
 import { coinFace, edgeText, normalFromHeight, loadImage, TEX } from '../tex.js';
 import { clamp, hash1, rng } from '../util.js';
+import { wornSteel, forgedIron, leatherWrap } from '../props/verse1-metal.js';
 
 // The die face: the stater relief inverted (sunk into the steel) and mirrored, like a real coin die.
-async function dieFaceTextures({ size = 1024, rim = 0.075 } = {}) {
+async function dieFaceTextures({ size = 2048 } = {}) {
   const hIm = await loadImage(`${TEX.base}tex/stater_height.png`);
-  const R = size / 2, s = 1 - rim * 0.6;
-  const c = document.createElement('canvas');
-  c.width = c.height = size;
-  const g = c.getContext('2d');
-  // coin heights first (white = high on the coin), mirrored left-right
-  g.fillStyle = '#6a6a6a'; g.fillRect(0, 0, size, size);
-  g.save();
-  g.translate(size, 0); g.scale(-1, 1);
-  g.beginPath(); g.arc(R, R, R * (1 - rim), 0, Math.PI * 2); g.clip();
-  g.filter = 'blur(6px)';
-  g.drawImage(hIm, R - R * s, R - R * s, size * s, size * s);
-  g.restore();
-  g.filter = 'none';
-  g.lineWidth = R * rim * 1.1; g.strokeStyle = '#f2f2f2';
-  g.beginPath(); g.arc(R, R, R * (1 - rim * 0.45), 0, Math.PI * 2); g.stroke();
-  g.fillStyle = '#d8d8d8';
-  for (let i = 0; i < 96; i++) {
-    const a = (i / 96) * Math.PI * 2;
-    g.beginPath(); g.arc(R + Math.cos(a) * R * (1 - rim * 1.35), R + Math.sin(a) * R * (1 - rim * 1.35), R * 0.011, 0, Math.PI * 2); g.fill();
-  }
-  // die heights are the inverse: what stands up on the coin is cut down into the die
-  const inv = document.createElement('canvas');
-  inv.width = inv.height = size;
-  const ig = inv.getContext('2d');
-  ig.filter = 'invert(1)';
-  ig.drawImage(c, 0, 0);
-  const normal = normalFromHeight(inv, 2.4, 7);
-  // colour: polished steel, darker and warmer down in the cut
+  const pIm = await loadImage(`${TEX.base}tex/stater_photo.jpg`);
+  const cIm = await loadImage(`${TEX.base}tex/stater_cavity.png`);
+  const R = size / 2;
+  const S = size * 1.1; // the coin's own edge falls just outside the die face: the die's edge is the only rim
+  // Draw a coin map mirrored left-right (a die is the coin's mirror image).
+  const mirrored = (im, filter, bg) => {
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    const g = c.getContext('2d');
+    g.fillStyle = bg; g.fillRect(0, 0, size, size);
+    g.save();
+    g.translate(size, 0); g.scale(-1, 1);
+    g.filter = filter;
+    g.drawImage(im, R - S / 2, R - S / 2, S, S);
+    g.restore();
+    return c;
+  };
+  // Colour: the museum photograph of the struck coin carries the crisp detail of real struck metal;
+  // its crevices are deepened with the cavity map.
   const col = document.createElement('canvas');
   col.width = col.height = size;
   const cg = col.getContext('2d');
-  cg.fillStyle = '#e4e6e8'; cg.fillRect(0, 0, size, size);
+  cg.drawImage(mirrored(pIm, 'grayscale(1) contrast(1.25) brightness(1.02)', '#9a9a9a'), 0, 0);
   cg.globalCompositeOperation = 'multiply';
-  cg.filter = 'blur(3px) contrast(1.8) brightness(1.05)';
-  cg.drawImage(inv, 0, 0);
+  cg.drawImage(mirrored(cIm, 'grayscale(1) contrast(1.8) brightness(1.08)', '#ffffff'), 0, 0);
   cg.globalCompositeOperation = 'source-over';
-  cg.filter = 'none';
   const color = new THREE.CanvasTexture(col);
   color.colorSpace = THREE.SRGBColorSpace;
   color.anisotropy = 8;
+  // A light relief from the same image, oriented so its shading agrees with the photograph's.
+  const hgt = mirrored(hIm, 'blur(2px)', '#6a6a6a');
+  const normal = normalFromHeight(hgt, 1.1, 1);
   return { normal, color };
 }
 
@@ -95,23 +88,28 @@ export async function mintStage(film) {
 
   // The die: a steel punch; its bottom face carries the king in mirror relief.
   const die = new THREE.Group();
-  const steel = new THREE.MeshPhysicalMaterial({ color: 0xa9aeb4, metalness: 1, roughness: 0.3 });
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(1.0, 1.08, 2.4, 128, 1, true), steel);
+  // forged iron body with hammer marks, tapering up; a polished steel working end with a worn, bright chamfer
+  const steel = wornSteel({ repeat: [3, 1] });
+  steel.envMapIntensity = 1.4;
+  const iron = forgedIron({ repeat: [3, 1.5] });
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.92, 1.03, 1.9, 96, 1, true), iron);
+  body.position.y = 0.25;
   body.castShadow = true;
   die.add(body);
-  const bevel = new THREE.Mesh(new THREE.TorusGeometry(1.0, 0.03, 12, 128), steel);
-  bevel.rotation.x = Math.PI / 2;
-  bevel.position.y = -1.2;
-  die.add(bevel);
+  const collarPts = [[1.0, -1.2], [1.05, -1.17], [1.08, -1.1], [1.08, -0.72], [1.03, -0.7]].map(([r, y]) => new THREE.Vector2(r, y));
+  const collar = new THREE.Mesh(new THREE.LatheGeometry(collarPts, 96), steel);
+  collar.castShadow = true;
+  die.add(collar);
+
   const dt = await dieFaceTextures();
   const faceMat = new THREE.MeshPhysicalMaterial({
-    color: 0xc4c8cc, metalness: 0.35, roughness: 0.55, map: dt.color, normalMap: dt.normal, normalScale: new THREE.Vector2(1.3, 1.3),
+    color: 0xe6e9ec, metalness: 0.55, roughness: 0.34, map: dt.color, normalMap: dt.normal, normalScale: new THREE.Vector2(0.9, 0.9),
   });
   const dieFace = new THREE.Mesh(new THREE.CircleGeometry(1.0, 128), faceMat);
   dieFace.rotation.x = Math.PI / 2; // faces down
   dieFace.position.y = -1.2;
   die.add(dieFace);
-  const top = new THREE.Mesh(new THREE.CircleGeometry(1.08, 64), steel);
+  const top = new THREE.Mesh(new THREE.CircleGeometry(0.92, 64), iron);
   top.rotation.x = -Math.PI / 2;
   top.position.y = 1.2;
   die.add(top);
@@ -130,88 +128,111 @@ export async function mintStage(film) {
   const dust = new Dust({ count: 500, size: 0.009, box: [9, 6, 9], gain: 0.7 });
   scene.add(dust);
 
-  // The war blade: a sword. Its cutting edge is the local x axis (the origin is where it meets the coin),
-  // y is up across the blade, z is through its thickness. Diamond section, so the bevels catch the light.
-  const L0 = -1.75, L1 = 1.05, BW = 0.13, BT = 0.016;
-  const halfW = (x) => { const u = (x - L0) / (L1 - L0); return BW * (1 - 0.2 * u) * (u > 0.8 ? Math.sqrt(Math.max(0, (1 - u) / 0.2)) : 1); };
-  const sec = (x) => { const hw = Math.max(halfW(x), 0.0004); return [[x, 0, 0], [x, hw, BT], [x, 2 * hw, 0], [x, hw, -BT]]; };
-  const bp = [];
-  const NB = 48;
-  for (let i = 0; i < NB; i++) {
-    const a = sec(L0 + ((L1 - L0) * i) / NB), b = sec(L0 + ((L1 - L0) * (i + 1)) / NB);
-    for (let k = 0; k < 4; k++) {
-      const k2 = (k + 1) % 4;
-      bp.push(...a[k], ...a[k2], ...b[k2], ...a[k], ...b[k2], ...b[k]);
+  // The war: the king's coins melt into a sword. A row of struck coins lies on the table; a molten front runs
+  // from the guard along the blade, and each coin it reaches glows, slumps and flows into the blade.
+  // Sword frame: its axis is +X from the guard (x = 0) to the tip; it lies flat (blade width along z, thickness y).
+  const war = new THREE.Group();
+  scene.add(war);
+  const BL = 4.2, BWD = 0.3, BTH = 0.1;
+  const halfW = (x) => { const u = x / BL; return BWD * (1 - 0.3 * u) * (u > 0.82 ? Math.sqrt(Math.max(0, (1 - u) / 0.18)) : 1); };
+  const bladeGeo = (() => {
+    const NB = 120, pos = [], idx = [], uv = [];
+    // diamond section with a raised ridge down the middle: (z, y) = (-hw, 0), (0, t), (hw, 0), (0, -t)
+    for (let i = 0; i <= NB; i++) {
+      const x = (BL * i) / NB, hw = Math.max(halfW(x), 0.002), t = BTH * Math.min(1, hw / BWD + 0.25);
+      pos.push(x, 0, -hw, x, t, 0, x, 0, hw, x, -t, 0);
+      uv.push(x / BL, 0, x / BL, 0.25, x / BL, 0.5, x / BL, 0.75);
     }
-  }
-  const bladeGeo = new THREE.BufferGeometry();
-  bladeGeo.setAttribute('position', new THREE.Float32BufferAttribute(bp, 3));
-  bladeGeo.computeVertexNormals();
-  const blade = new THREE.Group();
-  const bladeMat = new THREE.MeshPhysicalMaterial({ color: 0xd8dde3, metalness: 0.9, roughness: 0.2, clearcoat: 1, clearcoatRoughness: 0.08, side: THREE.DoubleSide });
-  const steelBlade = new THREE.Mesh(bladeGeo, bladeMat);
-  const hiltMat = new THREE.MeshPhysicalMaterial({ color: 0xb08a4a, metalness: 1, roughness: 0.3 });
-  const guard = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.62, 0.09), hiltMat);
-  guard.position.set(L0 - 0.03, BW, 0);
-  const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.042, 0.048, 0.55, 16), new THREE.MeshStandardMaterial({ color: 0x1a0d08, roughness: 0.8 }));
-  grip.rotation.z = Math.PI / 2;
-  grip.position.set(L0 - 0.33, BW, 0);
-  const pommel = new THREE.Mesh(new THREE.SphereGeometry(0.075, 20, 14), hiltMat);
-  pommel.position.set(L0 - 0.64, BW, 0);
-  const glint = new THREE.Mesh(new THREE.BoxGeometry((L1 - L0) * 0.8, 0.008, 0.008), new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 0.78, 0.6).multiplyScalar(2.6) }));
-  glint.position.set(L0 + (L1 - L0) * 0.4, 0.002, 0);
-  blade.add(steelBlade, guard, grip, pommel, glint);
-  blade.traverse((o) => { if (o.isMesh) o.castShadow = true; });
-  scene.add(blade);
-  const bladeLight = new THREE.SpotLight(0xffc0a0, 0, 20, 0.5, 0.8, 1.2);
-  scene.add(bladeLight, bladeLight.target);
-  // A pool of red light on the floor behind the blade (a fire off-screen), so the steel stands in silhouette.
-  const hazeTex = (() => {
-    const c = document.createElement('canvas'); c.width = c.height = 256;
-    const g = c.getContext('2d');
-    const gr = g.createRadialGradient(128, 128, 0, 128, 128, 128);
-    gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.4, 'rgba(255,255,255,0.45)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
-    g.fillStyle = gr; g.fillRect(0, 0, 256, 256);
-    return new THREE.CanvasTexture(c);
+    for (let i = 0; i < NB; i++) {
+      for (let k = 0; k < 4; k++) {
+        const a = i * 4 + k, b = i * 4 + ((k + 1) % 4), c = (i + 1) * 4 + ((k + 1) % 4), d = (i + 1) * 4 + k;
+        idx.push(a, d, b, b, d, c);
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx);
+    return g.toNonIndexed();
   })();
-  const haze = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({
-    map: hazeTex, color: new THREE.Color(1.0, 0.16, 0.05).multiplyScalar(0.55), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
-  }));
-  haze.rotation.x = -Math.PI / 2;
-  scene.add(haze);
+  bladeGeo.computeVertexNormals();
+  const warU = { uFront: { value: 0 }, uHot: { value: 1 } };
+  // Polished metal reads by its reflections: its own studio of thin light strips on black.
+  // (From the war shot's camera, the blade's near bevel mirrors the ceiling just behind the zenith, and its far
+  // bevel mirrors the far horizon: a long overhead box and a warm horizon strip sit exactly there.)
+  const stripEnv = studioEnv(film.renderer, [
+    { pos: [0, 6, -1.4], size: [14, 2.2], color: [1, 0.88, 0.7], intensity: 0.6 },
+    { pos: [0, 0.45, -6], size: [14, 0.9], color: [1, 0.5, 0.22], intensity: 0.35 },
+    { pos: [-4, 4, 5], size: [0.35, 9], color: [1, 0.92, 0.8], intensity: 0.8 },
+  ], { top: [0.05, 0.035, 0.025], horizon: [0.02, 0.012, 0.008], bottom: [0.004, 0.003, 0.002] });
+  const bladeMat = new THREE.MeshPhysicalMaterial({
+    color: new THREE.Color().setRGB(...METALS.gold.color), metalness: 1, roughness: 0.12, side: THREE.DoubleSide,
+    envMap: stripEnv, envMapIntensity: 1.5,
+  });
 
-  // The sliver the blade takes: the same segment the coin loses at clip 0.12 (first notch of seed 11).
-  const R0 = rng(11);
-  const na = R0() * Math.PI * 2, nw = 0.12 + R0() * 0.25, nd = 0.05 + R0() * 0.11;
-  const sh = new THREE.Shape();
-  const NSEG = 40;
-  for (let i = 0; i <= NSEG; i++) { const a = na - nw + (2 * nw * i) / NSEG; const x = Math.cos(a), y = Math.sin(a); i ? sh.lineTo(x, y) : sh.moveTo(x, y); }
-  for (let i = NSEG; i >= 0; i--) { const a = na - nw + (2 * nw * i) / NSEG; const r = Math.min(1, (1 - nd) / Math.cos(a - na)); sh.lineTo(Math.cos(a) * r, Math.sin(a) * r); }
-  const T = 0.16, bev = T * 0.18;
-  const sliverGeo = new THREE.ExtrudeGeometry(sh, { depth: T - bev * 2, bevelEnabled: true, bevelThickness: bev, bevelSize: bev * 0.9, bevelSegments: 3, curveSegments: 1 });
-  sliverGeo.translate(0, 0, -(T - bev * 2) / 2);
-  // pivot the sliver about its own centre so it can tumble
-  const mid = new THREE.Vector3(Math.cos(na) * (1 - nd * 0.5), Math.sin(na) * (1 - nd * 0.5), 0);
-  sliverGeo.translate(-mid.x, -mid.y, 0);
-  const sliverMat = new THREE.MeshPhysicalMaterial({ color: new THREE.Color().setRGB(...METALS.gold.color), metalness: 1, roughness: METALS.gold.roughness + 0.05 });
-  const sliver = new THREE.Mesh(sliverGeo, sliverMat);
-  sliver.castShadow = true;
-  scene.add(sliver);
-  const notch = { a: na, w: nw, d: nd, mid };
+  bladeMat.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, warU);
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying float vBX;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvBX = position.x;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying float vBX;\nuniform float uFront, uHot;')
+      .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nif (vBX > uFront) discard;')
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        float heat = smoothstep(uFront - 1.0, uFront, vBX);
+        totalEmissiveRadiance += mix(vec3(0.8, 0.2, 0.02), vec3(1.0, 0.62, 0.22), heat * heat) * heat * 1.1 * uHot;`);
+  };
+  bladeMat.customProgramCacheKey = () => 'verse1-war-blade';
+  const blade = new THREE.Mesh(bladeGeo, bladeMat);
+  blade.castShadow = true;
+  war.add(blade);
+  // The hilt: a forged steel crossguard, a leather-wrapped grip and a wheel pommel, all worn by use.
+  const steelMat = wornSteel({ repeat: [1.5, 1.5], env: stripEnv });
+  steelMat.envMapIntensity = 1.6;
+  const guardShape = new THREE.Shape();
+  guardShape.moveTo(-0.07, -0.72); guardShape.quadraticCurveTo(0.02, 0, -0.07, 0.72); guardShape.lineTo(0.07, 0.72);
+  guardShape.quadraticCurveTo(0.16, 0, 0.07, -0.72); guardShape.lineTo(-0.07, -0.72);
+  const guardGeo = new THREE.ExtrudeGeometry(guardShape, { depth: 0.1, bevelEnabled: true, bevelThickness: 0.025, bevelSize: 0.022, bevelSegments: 3, curveSegments: 24 });
+  guardGeo.translate(0, 0, -0.05);
+  guardGeo.rotateX(Math.PI / 2); // lie in the table plane: the guard's length runs along z
+  const guard = new THREE.Mesh(guardGeo, steelMat);
+  guard.position.set(-0.04, 0, 0);
+  const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.11, 0.95, 32, 1), leatherWrap({ repeat: [1, 1.2] }));
+  grip.rotation.z = Math.PI / 2;
+  grip.position.set(-0.6, 0, 0);
+  const pommelPts = [[0, -0.07], [0.12, -0.07], [0.19, -0.04], [0.2, 0], [0.19, 0.04], [0.12, 0.07], [0, 0.07]].reverse().map(([r, y]) => new THREE.Vector2(r, y));
+  const pommel = new THREE.Mesh(new THREE.LatheGeometry(pommelPts, 48), steelMat);
+  pommel.rotation.z = Math.PI / 2;
+  pommel.position.set(-1.14, 0, 0);
+  for (const m of [guard, grip, pommel]) { m.castShadow = true; war.add(m); }
+  war.position.y = BTH;
+  // The coins it swallows: struck staters in a row along the blade.
+  const rowCoins = [];
+  for (let i = 0; i < 6; i++) {
+    const c = new Coin({ radius: 0.36, thickness: 0.08, face, metal: 'gold', seed: 31 + i });
+    c.castShadow = true;
+    scene.add(c);
+    rowCoins.push(c);
+  }
+  // the molten front lights what is around it
+  const moltenLight = new THREE.PointLight(0xff8a30, 0, 2.2, 1.8);
+  scene.add(moltenLight);
 
   const S = {
-    scene, coin, blankCoin, floor, die, dieFace, faceMat, sparks, dust, key, rim, rake, blade, bladeMat, glint, bladeLight, sliver, notch, haze,
+    scene, coin, blankCoin, floor, die, dieFace, faceMat, sparks, dust, key, rim, rake, war, blade, bladeMat, warU, rowCoins, moltenLight, BL,
     fx: { bloom: 0.32, threshold: 1.1, bloomRadius: 0.35, grain: 0.04, vignette: 0.5, tint: [1.02, 0.98, 0.92] },
-    burst(t, t0, origin = [0, 0.1, 0], power = 1) {
+    // Sparks from a point, or (rimR > 0) sprayed outward and low from a ring, as metal squirts from under a die.
+    burst(t, t0, origin = [0, 0.1, 0], power = 1, rimR = 0) {
       const p = sparks.geometry.attributes.position.array;
       const dtt = t - t0;
       sparks.visible = dtt >= 0 && dtt < 0.9;
       if (!sparks.visible) return;
       for (let i = 0; i < NS; i++) {
-        const a = hash1(i * 3) * Math.PI * 2, e = hash1(i * 3 + 1) * 0.9 + 0.1, v = (1.5 + hash1(i * 3 + 2) * 4) * power;
-        p[i * 3] = origin[0] + Math.cos(a) * Math.cos(e) * v * dtt;
+        const a = hash1(i * 3) * Math.PI * 2, v = (1.5 + hash1(i * 3 + 2) * 4) * power;
+        const e = rimR > 0 ? hash1(i * 3 + 1) * 0.45 + 0.03 : hash1(i * 3 + 1) * 0.9 + 0.1;
+        p[i * 3] = origin[0] + Math.cos(a) * (rimR + Math.cos(e) * v * dtt);
         p[i * 3 + 1] = origin[1] + Math.sin(e) * v * dtt - 4.9 * dtt * dtt;
-        p[i * 3 + 2] = origin[2] + Math.sin(a) * Math.cos(e) * v * dtt;
+        p[i * 3 + 2] = origin[2] + Math.sin(a) * (rimR + Math.cos(e) * v * dtt);
       }
       sparks.geometry.attributes.position.needsUpdate = true;
       sparks.material.opacity = clamp(1 - dtt / 0.9);
@@ -235,10 +256,11 @@ export async function mintStage(film) {
       key.position.set(-3.5, 4.5, 3.5); key.target.position.set(0, 0.2, 0);
       rim.intensity = 2.5;
       rake.intensity = 0; rake.color.set(0xffd9a8);
-      blade.visible = false;
-      bladeLight.intensity = 0;
-      sliver.visible = false;
-      haze.visible = false;
+      war.visible = false;
+      warU.uFront.value = 0; warU.uHot.value = 1;
+      for (const c of rowCoins) { c.visible = false; c.scale.setScalar(1); c.setEmissive([0, 0, 0], 0); }
+      coin.scale.setScalar(1);
+      moltenLight.intensity = 0;
       rim.color.set(0xffb86b); rim.position.set(3, 2, -5);
       scene.environmentIntensity = 1.0;
       dust.visible = true;

@@ -63,7 +63,7 @@ captions. The audience could not see the idea. Rules that follow from that:
     cutFlash, shake` (default 0.004 rad handheld drift), `flashColor`.
 - **Shared props you may use** (import, don't edit): `Coin` (`props/coin.js`: gold/silver/tin/orange metals,
   clip, relief, lettered edge), `NoteCloud` (`props/notes.js`: thousands of fluttering bank notes), `Block`
-  (`props/block.js`: the orange proof block with a real hash), `Grid21` (`props/grid21.js`), `Dust`
+  (`props/block.js`: the orange proof block with a real hash), `Dust`
   (`props/dust.js`), texture makers in `tex.js` (`coinFace`, `banknote`, `newspaper`, `blockFace`,
   `whitepaperPage`, `terminal`, `textCard`, `normalFromHeight`, `loadImage`/`preload`).
   Shared stages you may place shots on: `gold` (coin studio), `paper` (notes, pen, clock), `proof` (block, grid).

@@ -1,5 +1,7 @@
-"""Extracts glyph outlines (digits and punctuation) from an open-licensed font into data/glyphs.json,
-so the film can extrude solid 3D numerals without a font loader.
+"""Extracts glyph outlines from an open-licensed font, so the site can extrude solid 3D text without a font loader.
+
+data/glyphs.json: the film's digits and punctuation, in the font's default old-style figures.
+data/sim-glyphs.json: the simulator's years in lining figures (all the same height), plus the letters of NOT YET.
 
 Font: Playfair Display Black (SIL Open Font License), from @fontsource/playfair-display.
 """
@@ -11,7 +13,7 @@ from fontTools.ttLib import TTFont
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, 'node_modules/@fontsource/playfair-display/files/playfair-display-latin-900-normal.woff')
-CHARS = '0123456789,.'
+FILES = {'glyphs.json': ('0123456789,.', False), 'sim-glyphs.json': ('0123456789NOTYE ', True)}
 
 
 class Rec(BasePen):
@@ -42,11 +44,14 @@ font = TTFont(SRC)
 cmap = font.getBestCmap()
 gs = font.getGlyphSet()
 hmtx = font['hmtx']
-out = {'unitsPerEm': font['head'].unitsPerEm, 'glyphs': {}}
-for ch in CHARS:
-    name = cmap[ord(ch)]
-    pen = Rec(gs)
-    gs[name].draw(pen)
-    out['glyphs'][ch] = {'advance': hmtx[name][0], 'cmds': pen.cmds}
-json.dump(out, open(os.path.join(ROOT, 'data/glyphs.json'), 'w'), separators=(',', ':'))
-print('glyphs', len(out['glyphs']), 'upm', out['unitsPerEm'])
+for file, (chars, lining) in FILES.items():
+    out = {'unitsPerEm': font['head'].unitsPerEm, 'glyphs': {}}
+    for ch in chars:
+        name = cmap[ord(ch)]
+        if lining and ch.isdigit():
+            name += '.lf'  # the font's lnum alternates
+        pen = Rec(gs)
+        gs[name].draw(pen)
+        out['glyphs'][ch] = {'advance': hmtx[name][0], 'cmds': pen.cmds}
+    json.dump(out, open(os.path.join(ROOT, 'data', file), 'w'), separators=(',', ':'))
+    print(file, len(out['glyphs']), 'glyphs, upm', out['unitsPerEm'])

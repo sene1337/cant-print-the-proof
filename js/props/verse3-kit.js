@@ -174,10 +174,10 @@ export function patchBurn(mat, { seed = 0, back = [0.9, 0.885, 0.85], ember = [1
         if (!gl_FrontFacing) diffuseColor.rgb = uBack;
         float v3d = v3burn();
         if (v3d < 0.0) discard;
-        diffuseColor.rgb *= mix(0.06, 1.0, smoothstep(0.035, 0.17, v3d));`)
+        diffuseColor.rgb *= mix(0.3, 1.0, smoothstep(0.02, 0.1, v3d));`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         float v3e = (1.0 - smoothstep(0.0, 0.022, v3d)) * step(0.0005, uBurn);
-        totalEmissiveRadiance += uEmber * v3e * (2.2 + 2.0 * v3n(vBUv * 38.0 + uTime * 7.0));`);
+        totalEmissiveRadiance += uEmber * v3e * (0.55 + 0.25 * v3n(vBUv * 38.0));`);
   };
   mat.customProgramCacheKey = () => 'verse3-burn';
   return u;

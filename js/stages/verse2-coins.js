@@ -108,14 +108,34 @@ function brushed() {
   return t;
 }
 
-// Tailor's shears: brushed steel blades with polished ground edges and bevels, a domed slotted pivot screw,
-// and black-japanned finger bows. Pivot at the origin, blades toward +x, cutting line at y = 0 between the blades.
+// Fine wear on the steel: faint scratches and a slightly tarnished patch near the pivot (colour; 1 = clean).
+function wear() {
+  const W = 512, H = 128;
+  const [c, g] = canvas2d(W, H);
+  g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, H);
+  const smudge = g.createRadialGradient(40, 64, 4, 40, 64, 150);
+  smudge.addColorStop(0, 'rgba(120,112,100,0.35)'); smudge.addColorStop(1, 'rgba(120,112,100,0)');
+  g.fillStyle = smudge; g.fillRect(0, 0, W, H);
+  const R = rng(91);
+  for (let i = 0; i < 70; i++) {
+    const x = R() * W, y = R() * H, len = 20 + R() * 120, a = (R() - 0.5) * 0.5;
+    g.strokeStyle = `rgba(${R() < 0.5 ? '90,90,90' : '255,255,255'},${0.08 + R() * 0.12})`;
+    g.lineWidth = R() < 0.8 ? 0.8 : 1.6;
+    g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len); g.stroke();
+  }
+  const t = canvasTex(c, { repeat: true });
+  t.repeat.set(1.1, 3);
+  return t;
+}
+
+// Tailor's shears: polished steel blades with a ground bevel along each cutting edge, a domed slotted pivot screw on a
+// washer, and black-enamelled handles with finger bows. Pivot at the origin, blades toward +x, cut line at y = 0.
 export function buildShears() {
-  const rough = brushed();
-  // satin steel: mostly metal, with enough diffuse that the flat of the blade takes the key light
-  const steel = clampHot(new THREE.MeshPhysicalMaterial({ color: 0xe4e8ec, metalness: 0.78, roughness: 0.36, roughnessMap: rough, anisotropy: 0.75, clearcoat: 0.35, clearcoatRoughness: 0.12 }), 3.5);
-  const polished = clampHot(new THREE.MeshPhysicalMaterial({ color: 0xf6f8fa, metalness: 1, roughness: 0.06 }), 3.5);
-  const japan = clampHot(new THREE.MeshPhysicalMaterial({ color: 0x0b0a0a, metalness: 0.3, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.08 }), 4);
+  const steel = clampHot(new THREE.MeshPhysicalMaterial({
+    color: 0xd9dce0, map: wear(), metalness: 1, roughness: 0.15, roughnessMap: brushed(), anisotropy: 0.6,
+  }), 3.5);
+  const polished = clampHot(new THREE.MeshPhysicalMaterial({ color: 0xf2f4f6, metalness: 1, roughness: 0.07 }), 3.5);
+  const japan = clampHot(new THREE.MeshPhysicalMaterial({ color: 0x0b0a0a, metalness: 0.3, roughness: 0.28, clearcoat: 1, clearcoatRoughness: 0.06 }), 3);
   const dark = new THREE.MeshStandardMaterial({ color: 0x0a0a0a, roughness: 0.6 });
   const T = 0.075, B = 0.02;
   const G = new THREE.Group();
@@ -126,39 +146,45 @@ export function buildShears() {
     jaw.position.z = sign > 0 ? 0.004 + B : -0.004 - T + B;
     jaw.castShadow = true;
     piece.add(jaw);
-    // polished ground edge along the cutting edge, on the outer face, where it catches the light
-    const zOut = sign > 0 ? 0.004 + T + 0.0015 : -0.004 - T - 0.0015;
-    const ground = new THREE.Mesh(new THREE.BoxGeometry(1.86, 0.055, 0.003), polished);
-    ground.position.set(0.7, 0.03 * sign, zOut);
+    // the ground bevel: a narrow facet along the cutting edge, tilted 25 degrees off the blade's face, so it mirrors a
+    // different part of the room than the face does: the bright line along a sharpened edge
+    const zOut = sign > 0 ? 0.004 + T + 0.002 : -0.004 - T - 0.002;
+    const ground = new THREE.Mesh(new THREE.BoxGeometry(1.86, 0.06, 0.004), polished);
+    ground.position.set(0.72, 0.032 * sign, zOut);
+    ground.rotation.x = sign * 25 * Math.PI / 180;
+    ground.userData.groundEdge = true;
     piece.add(ground);
-    // japanned shank running back from the pivot boss to a finger bow
+    // enamelled handle: a short curved shank from the pivot boss to a finger bow (tailor's-shears proportions)
     const zMid = sign * (0.004 + T / 2);
-    const pts = [[-0.24, -0.03], [-0.8, -0.16], [-1.45, -0.3], [-1.8, -0.38]].map(([x, y]) => new THREE.Vector3(x, y * sign, zMid));
-    const shank = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 32, 0.07, 12, false), japan);
+    const pts = [[-0.22, -0.02], [-0.55, -0.1], [-0.85, -0.22], [-1.02, -0.3]].map(([x, y]) => new THREE.Vector3(x, y * sign, zMid));
+    const shank = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 24, 0.065, 12, false), japan);
+    shank.scale.z = 0.8;
     shank.castShadow = true;
     piece.add(shank);
-    const bow = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.06, 14, 48), japan);
-    bow.position.set(sign > 0 ? -2.06 : -2.16, (sign > 0 ? -0.5 : -0.56) * sign, zMid);
-    bow.scale.set(sign > 0 ? 1 : 1.4, 1, 1);
+    const bow = new THREE.Mesh(new THREE.TorusGeometry(sign > 0 ? 0.2 : 0.26, 0.055, 14, 48), japan);
+    bow.position.set(sign > 0 ? -1.2 : -1.28, (sign > 0 ? -0.4 : -0.46) * sign, zMid);
+    bow.scale.set(sign > 0 ? 1.1 : 1.35, 1, 1);
     bow.castShadow = true;
     piece.add(bow);
     G.add(piece);
     pieces.push(piece);
   }
-  // pivot: a domed, slotted screw head on one side and a hex nut on the other
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.15, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2), polished);
-  head.rotation.x = Math.PI / 2;
-  head.scale.set(1, 0.45, 1);
-  head.position.z = 0.004 + T + 0.004;
-  G.add(head);
-  const slot = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.028, 0.03), dark);
-  slot.position.z = 0.004 + T + 0.066;
-  slot.rotation.z = 0.5;
-  G.add(slot);
-  const nut = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.06, 6), steel);
-  nut.rotation.x = Math.PI / 2;
-  nut.position.z = -(0.004 + T + 0.03);
-  G.add(nut);
+  // pivot: a domed, slotted screw head on a washer, the same on both sides
+  for (const side of [1, -1]) {
+    const washer = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.19, 0.012, 40), steel);
+    washer.rotation.x = Math.PI / 2;
+    washer.position.z = side * (0.004 + T + 0.006);
+    G.add(washer);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.15, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2), polished);
+    head.rotation.x = side * Math.PI / 2;
+    head.scale.set(1, 0.45, 1);
+    head.position.z = side * (0.004 + T + 0.012);
+    G.add(head);
+    const slot = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.028, 0.03), dark);
+    slot.position.z = side * (0.004 + T + 0.074);
+    slot.rotation.z = 0.5;
+    G.add(slot);
+  }
   return { group: G, upper: pieces[0], lower: pieces[1] };
 }
 
@@ -211,8 +237,9 @@ export async function coinsStage(film) {
   const rig = new THREE.Group();
   rig.rotation.y = CUT_DIR;
   scene.add(rig);
-  const chunkFace = clampHot(new THREE.MeshPhysicalMaterial({ color: coin.base.clone(), metalness: 1, roughness: 0.3, map: coin.faceMat.map, normalMap: coin.faceMat.normalMap }), 2.5);
-  const chunkSide = clampHot(new THREE.MeshPhysicalMaterial({ color: coin.base.clone(), metalness: 1, roughness: 0.32 }), 2.5);
+  // flash safety: the falling pieces are capped so they cannot pop bright through the frame
+  const chunkFace = clampHot(new THREE.MeshPhysicalMaterial({ color: coin.base.clone(), metalness: 1, roughness: 0.4, map: coin.faceMat.map, normalMap: coin.faceMat.normalMap }), 1.2);
+  const chunkSide = clampHot(new THREE.MeshPhysicalMaterial({ color: coin.base.clone(), metalness: 1, roughness: 0.42 }), 1.2);
   const chunks = [1, 2, 3].map((j) => {
     const { geo, cen } = chunkGeo(j);
     const m = new THREE.Mesh(geo, [chunkFace, chunkSide]);
@@ -234,28 +261,38 @@ export async function coinsStage(film) {
   scene.add(riser);
 
   const shears = buildShears();
+  // flash safety: the thin polished edge lines swept the same cells on every snip as one-frame pops. Here the
+  // edge is a narrower, satin strip, and the whole tool's highlights are capped.
+  const edgeMat = clampHot(new THREE.MeshPhysicalMaterial({ color: 0xeef0f2, metalness: 1, roughness: 0.1 }), 1.4);
+  shears.group.traverse((o) => {
+    if (!o.isMesh) return;
+    if (o.userData.groundEdge) { o.material = edgeMat; o.scale.y = 0.6; } else clampHot(o.material, 1.8);
+  });
   rig.add(shears.group);
 
   // Gold shavings: small bright slivers thrown off each cut.
-  const NSH = 40;
-  const shavMat = clampHot(new THREE.MeshPhysicalMaterial({ color: new THREE.Color().setRGB(1, 0.74, 0.32), metalness: 1, roughness: 0.32 }), 2.5);
+  // flash safety: a few dull shavings, not a spray of sparkles
+  const NSH = 14;
+  const shavMat = clampHot(new THREE.MeshPhysicalMaterial({ color: new THREE.Color().setRGB(1, 0.74, 0.32), metalness: 1, roughness: 0.5 }), 1.0);
   const shav = new Pieces(new THREE.BoxGeometry(1, 1, 1), shavMat, NSH * SNIPS.length);
   shav.castShadow = false;
   rig.add(shav);
 
   // The emperors: a row of silver denarii, each one smaller, more clipped and greyer.
   const dface = await coinFace('denarius');
-  const ROW = 7;
+  const ROW = 4;
   const row = [];
   for (let i = 0; i < ROW; i++) {
     const c = new Coin({ radius: R, thickness: TH, face: dface, metal: 'silver', seed: 40 + i * 3 });
-    c.setClip([0, 0.1, 0.2, 0.31, 0.43, 0.56, 0.7][i]);
+    c.setClip([0, 0.24, 0.47, 0.72][i]);
     // Silver debased toward bronze, as late Roman coins were (a silver wash over copper).
-    const k = [0, 0.14, 0.3, 0.46, 0.63, 0.8, 0.96][i];
+    const k = [0, 0.33, 0.66, 0.97][i];
     const col = new THREE.Color(0.93, 0.92, 0.88).lerp(new THREE.Color(0.42, 0.26, 0.15), k);
-    for (const m of [c.faceMat, c.sideMat]) { m.color.copy(col); m.roughness = 0.25 + k * 0.3; }
-    clampHot(c.faceMat, 6); clampHot(c.sideMat, 6);
-    c.userData.s = [1, 0.93, 0.86, 0.79, 0.72, 0.65, 0.58][i];
+    for (const m of [c.faceMat, c.sideMat]) { m.color.copy(col); m.roughness = 0.38 + k * 0.25; }
+    // flash safety: soft glints and gentler relief, so the faces do not flicker as the camera pans
+    clampHot(c.faceMat, 2.0); clampHot(c.sideMat, 2.0);
+    c.setRelief(0.75);
+    c.userData.s = [1, 0.88, 0.76, 0.64][i];
     c.visible = false;
     scene.add(c);
     row.push(c);
@@ -290,29 +327,30 @@ export async function coinsStage(film) {
       const n = cutsDone(t);
       coin.mesh.geometry = geos[n];
       turn.rotation.y = turnAngle(t);
-      // Falling pieces (rig frame: each leaves along +x, flips over, lands and skids).
+      // Falling pieces (rig frame): the closing blade pushes each piece down; it tips outward over the cut line,
+      // drops straight to the floor, bounces once and lies flat.
       chunks.forEach((m, k) => {
         const j = k + 1, ts = SNIPS[k];
         const dt = t - ts;
         m.visible = dt >= 0;
         if (!m.visible) return;
         const r = m.userData.r;
-        const g = 24, vy = 1.5, dy = COIN_Y - TH / 2;
+        const g = 24, vy = -1.2, dy = COIN_Y - TH / 2;
         const tf = (vy + Math.sqrt(vy * vy + 2 * g * dy)) / g;
-        const vout = 1.3 + hash1(j * 7) * 0.4;
-        const side = (hash1(j * 11) - 0.5) * 0.7;
+        const vout = 0.12 + hash1(j * 7) * 0.08;   // drops nearly straight down beside the riser
+        const side = (hash1(j * 11) - 0.5) * 0.5;
         let y, flip, slide;
         if (dt < tf) {
           y = COIN_Y + vy * dt - 0.5 * g * dt * dt;
-          flip = Math.PI * (dt / tf);
+          flip = Math.PI * easeIn(dt / tf, 1.6);
           slide = vout * dt;
         } else {
-          const b = dt - tf, tb = 0.2;
-          y = TH / 2 + (b < tb ? Math.sin((Math.PI * b) / tb) * 0.07 : 0);
-          flip = Math.PI + (b < tb ? Math.sin((Math.PI * b) / tb) * 0.12 : 0);
-          slide = vout * tf + (vout * 0.6) * (1 - Math.exp(-5 * b)) / 5;
+          const b = dt - tf, tb = 0.16;
+          y = TH / 2 + (b < tb ? Math.sin((Math.PI * b) / tb) * 0.05 : 0);
+          flip = Math.PI + (b < tb ? Math.sin((Math.PI * b) / tb) * 0.1 : 0);
+          slide = vout * tf + (vout * 0.5) * (1 - Math.exp(-6 * b)) / 6;
         }
-        m.position.set(r + slide, y, side * Math.min(dt, 0.6));
+        m.position.set(r + slide, y, side * Math.min(dt, 0.4));
         const q = new THREE.Quaternion().setFromAxisAngle(Y_AXIS, -CUTS[j].a);
         q.multiply(new THREE.Quaternion().setFromAxisAngle(X_AXIS, -Math.PI / 2));
         m.quaternion.copy(new THREE.Quaternion().setFromAxisAngle(Z_AXIS, -flip).multiply(q));
@@ -325,7 +363,7 @@ export async function coinsStage(film) {
         const h = (q) => hash1(i * 13 + q);
         const zc = (h(1) - 0.5) * 0.9;
         const x0 = R * (1 - CUTS[k + 1].d), y0 = COIN_Y;
-        const vx = 0.4 + h(2) * 1.6, vy = h(3) * 1.4 - 0.2, vz = (h(4) - 0.5) * 1.8;
+        const vx = 0.2 + h(2) * 0.7, vy = h(3) * 0.6 - 0.3, vz = (h(4) - 0.5) * 0.9;
         const g = 14;
         const tl = (vy + Math.sqrt(vy * vy + 2 * g * y0)) / g;
         const tt = Math.min(dt, tl);
@@ -339,12 +377,13 @@ export async function coinsStage(film) {
       shears.group.visible = shearsOn;
       if (shearsOn) {
         let close = 0;
-        for (const s of SNIPS) {
+        SNIPS.forEach((s, k) => {
           const a = t - s;
+          const last = k === SNIPS.length - 1;   // after the last bite the shears stay shut (no extra sweep before the cut)
           if (a > -0.13 && a <= 0) close = Math.max(close, easeIn(1 + a / 0.13, 2));
-          else if (a > 0 && a < 0.3) close = Math.max(close, a < 0.06 ? 1 : 1 - easeOut((a - 0.06) / 0.24, 2));
-        }
-        const open = (1 - close) * 17 * DEG;
+          else if (a > 0 && (last || a < 0.3)) close = Math.max(close, last || a < 0.06 ? 1 : 1 - easeOut((a - 0.06) / 0.24, 2));
+        });
+        const open = (1 - close) * 24 * DEG;
         shears.upper.rotation.z = open;
         shears.lower.rotation.z = -open;
         // cutting plane follows the chord of the next cut; the shears come in, then leave.
@@ -352,10 +391,19 @@ export async function coinsStage(film) {
         if (t >= SNIPS[0] + 0.3) d = lerp(CUTS[1].d, CUTS[2].d, clamp((t - SNIPS[0] - 0.3) / 0.6));
         if (t >= SNIPS[1] + 0.2) d = lerp(CUTS[2].d, CUTS[3].d, clamp((t - SNIPS[1] - 0.2) / 0.3));
         const approach = 1 - easeOut(clamp((t - 49.96) / 0.8), 2.2);
-        const leave = easeIn(clamp((t - SNIPS[2] - 0.3) / 0.5), 2);
-        const x = R * (1 - d) + approach * 2.6 + leave * 3.0;
-        shears.group.position.set(x, COIN_Y, -1.1 - approach * 1.2 - leave * 1.5);
+        const leave = easeIn(clamp((t - SNIPS[2] - 0.6) / 0.5), 2);   // only after the cut to the next shot
+        // back off while the coin turns to the next cut, so the turning rim never meets the jaws
+        let back = 0;
+        for (let k = 0; k < SNIPS.length - 1; k++) {
+          const a0 = SNIPS[k] + 0.08, a1 = SNIPS[k + 1] - 0.14;
+          back = Math.max(back, Math.sin(Math.PI * clamp((t - a0) / (a1 - a0))));
+        }
+        const x = R * (1 - d) + approach * 2.6 + leave * 3.0 + back * 0.22;
+        // pivot level with the coin's underside: the closed blades meet under the coin, never inside it
+        shears.group.position.set(x, COIN_Y - TH / 2 - 0.004, -1.1 - approach * 1.2 - leave * 1.5);
         shears.group.rotation.set(0, -Math.PI / 2, 0);
+        // mirrored so the descending blade sits outside the cut line, over the piece being removed
+        shears.group.scale.set(1, 1, -1);
       }
     },
 
@@ -363,10 +411,13 @@ export async function coinsStage(film) {
     rowAt() {
       coin.visible = false;
       riser.visible = false;
-      let x = 0;
+      // centred on x = 0: from the first coin's outer edge to the last coin's
+      const gap = 0.3;
+      const span = row.reduce((a, c) => a + 2 * R * c.userData.s, 0) + gap * (row.length - 1);
+      let x = -span / 2 + R * row[0].userData.s;
       row.forEach((c, i) => {
         const k = c.userData.s;
-        if (i > 0) x += (row[i - 1].userData.s + k) * R + 0.28;
+        if (i > 0) x += (row[i - 1].userData.s + k) * R + gap;
         c.userData.x = x;
         c.visible = true;
         c.scale.setScalar(k);

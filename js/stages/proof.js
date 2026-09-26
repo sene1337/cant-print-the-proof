@@ -133,11 +133,11 @@ export async function proofStage(film) {
     },
     // Notes stream across the chain (along -z) like water past rocks: they part around each block,
     // squeeze through the gaps and ride up over the links. The blocks don't move.
-    flow(t, { n = 1600, speed = 3 } = {}) {
+    flow(t, { n = 1600, speed = 3, x1 = 3 } = {}) {
       river.visible = true;
       river.setTime(t);
-      river.setFlutter(0.6);
-      const L = 18, X0 = -26, X1 = 3, SP = 1.9;
+      river.setFlutter(0.2);
+      const L = 18, X0 = -26, X1 = x1, SP = 1.9;
       river.layout(n, (i, d) => {
         const r1 = hash1(i * 7 + 1), r2 = hash1(i * 7 + 2), r3 = hash1(i * 7 + 3), r4 = hash1(i * 7 + 4);
         let x = X0 + r1 * (X1 - X0);

@@ -7,8 +7,9 @@
 <meta name="description" content="A music video about the history of money that plays live in your browser. Every frame is a mined proof-of-work block you can verify yourself.">
 <meta property="og:title" content="Can't Print the Proof">
 <meta property="og:description" content="A music video that plays live in your browser. Every frame is a mined block. Verify it yourself.">
-<meta property="og:image" content="media/poster.jpg">
+<meta property="og:image" content="https://sene1337.github.io/cant-print-the-proof/media/poster.jpg">
 <meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:creator" content="@bradmillscan">
 <meta name="theme-color" content="#060504">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23060504'/%3E%3Crect x='18' y='18' width='28' height='28' rx='3' fill='none' stroke='%23F7931A' stroke-width='4'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="css/site.css">
@@ -24,10 +25,12 @@
   <div id="cover" class="cover">
     <p class="kicker">A music video that is also a blockchain</p>
     <h1>Can't Print<br>the Proof</h1>
+    <p class="byline">by <a href="https://x.com/bradmillscan">@bradmillscan</a></p>
     <button id="play" class="play" type="button" disabled>
       <span class="play-icon" aria-hidden="true"></span><span id="playLabel">Loading the film</span>
     </button>
     <p class="fine" id="fine">Drawn live in your browser, frame by frame. Sound on.</p>
+    <a class="cover-sim" id="coverSim" href="#sim">While it loads, find your freedom year ↓</a>
   </div>
 </div>
 <div id="ui" class="ui" hidden>
@@ -38,7 +41,8 @@
   <span id="clock" class="clock">0:00</span>
 </div>
 
-<main class="page">
+<main>
+<div class="page">
   <section class="lede">
     <p class="big">Money tells its own story: shell, stone, gold, paper, proof. Paper can be printed without limit. Proof has to be earned, and there will only ever be twenty-one million.</p>
   </section>
@@ -77,18 +81,269 @@
       </div>
     </div>
   </section>
+</div>
 
+<section id="sim" class="sim" aria-labelledby="simTitle">
+  <header class="sim-head">
+    <a class="stamp" href="#stage" data-seek="168.4">2:48 in the film</a>
+    <p class="kicker">Sovereignty simulator</p>
+    <h2 id="simTitle">Your freedom year</h2>
+    <p class="byline">by <a href="https://x.com/bradmillscan">@bradmillscan</a></p>
+    <p>Set your bitcoin, what else you own and what your life costs. The simulator finds the first year you could stop working and still pay your way to 2050. The sooner that year, the higher your sun.</p>
+    <p class="sim-credit">Prices, returns and the five strategies come from <a href="https://github.com/bitcoin-model/bitcoin_model">Bitcoin24</a>, the open model by Michael Saylor, Shirish Jajodia and Chaitanya Jain. The rest is this simulator's own: the search for your freedom year, the years after it, and the tax, borrowing and STRC choices.</p>
+  </header>
+
+  <div class="sim-grid">
+    <div class="sim-view">
+      <div class="sim-scene" id="simScene">
+        <canvas id="simCanvas" aria-hidden="true"></canvas>
+        <p class="sim-year" id="simYearBig" aria-hidden="true">2034</p>
+      </div>
+      <p class="sim-verdict" id="simVerdict" aria-live="polite"></p>
+      <figure class="sim-chart">
+        <figcaption><span>Bitcoin you own each year, net of any loan</span><span id="chartMax"></span></figcaption>
+        <div class="chart-row">
+          <div class="c-yaxis" aria-hidden="true"><span class="c-ytitle">BTC owned</span><span class="c-ytick c-y1" id="yTop"></span><span class="c-ytick c-y2" id="yMid"></span><span class="c-ytick c-y3">0</span></div>
+          <div class="chart-box" id="chartBox" role="img" aria-label="">
+            <svg viewBox="0 0 24 100" preserveAspectRatio="none" aria-hidden="true">
+              <line class="c-grid" x1="0" x2="24" y1="50" y2="50"/>
+              <path id="chartArea" class="c-area" d=""/>
+              <path id="chartLine" class="c-line" d=""/>
+              <line id="chartFree" class="c-free" x1="0" x2="0" y1="0" y2="100"/>
+            </svg>
+            <span class="c-free-label" id="chartFreeLabel"></span>
+          </div>
+        </div>
+        <div class="c-axis" aria-hidden="true"><span>2026</span><span class="c-mid">2038</span><span>2050</span></div>
+      </figure>
+      <dl class="sim-results">
+        <div><dt>Net worth today</dt><dd id="rToday"></dd></div>
+        <div><dt>Net worth in 2045</dt><dd id="r2045"></dd></div>
+        <div><dt>Bitcoin price in 2045</dt><dd id="rPx"></dd></div>
+        <div><dt>Bitcoin's share of world assets in 2045</dt><dd id="rShare"></dd></div>
+        <div><dt>Bitcoin paid in tax through 2050</dt><dd id="rTax"></dd></div>
+        <div><dt>Bitcoin still yours in 2050</dt><dd id="r2090"></dd></div>
+        <div><dt id="rALabel"></dt><dd id="rA"></dd></div>
+        <div><dt id="rBLabel"></dt><dd id="rB"></dd></div>
+      </dl>
+      <ul class="sim-warn" id="simWarn" aria-live="polite"></ul>
+    </div>
+
+    <div class="sim-controls">
+      <p class="sim-pin" id="simPin" aria-hidden="true"><b id="pinYear"></b><span id="pinPath"></span></p>
+
+      <fieldset class="grp">
+        <legend>You</legend>
+        <div class="control">
+          <label for="oBtc">Your bitcoin</label>
+          <span class="field"><input id="oBtc" type="text" inputmode="decimal" autocomplete="off" spellcheck="false"></span>
+          <input type="range" id="sBtc" min="0" max="1000" value="342" aria-label="Your bitcoin">
+        </div>
+        <div class="control">
+          <label for="sAssets">Everything else you own</label><output id="oAssets" for="sAssets"></output>
+          <input type="range" id="sAssets" min="0" max="1000" value="500" aria-describedby="assetsHint">
+          <p class="hint" id="assetsHint">Property, shares, bonds and cash, before the mortgage. The split and the mortgage are under Assumptions.</p>
+        </div>
+        <div class="control">
+          <label for="sEarn">What you earn per year</label><output id="oEarn" for="sEarn"></output>
+          <input type="range" id="sEarn" min="0" max="1000" value="500">
+        </div>
+        <div class="control">
+          <label for="sSave">How much you save</label><output id="oSave" for="sSave"></output>
+          <input type="range" id="sSave" min="0" max="80" step="1" value="25" aria-describedby="saveHint">
+          <p class="hint" id="saveHint"><span id="saveHintText"></span><button type="button" class="link" id="saveReset" hidden></button></p>
+        </div>
+        <div class="control">
+          <label for="sSpend">What your life costs per year</label><output id="oSpend" for="sSpend"></output>
+          <input type="range" id="sSpend" min="0" max="1000" value="459">
+        </div>
+        <div class="control">
+          <label for="sInf">Your personal inflation</label><output id="oInf" for="sInf"></output>
+          <input type="range" id="sInf" min="0" max="15" step="0.5" value="7" aria-describedby="infHint">
+          <p class="hint" id="infHint">How fast your real costs rise each year, not the CPI. Bitcoin24 assumes 6% monetary inflation and 2% CPI.</p>
+        </div>
+      </fieldset>
+
+      <fieldset class="grp">
+        <legend>Strategy</legend>
+        <p class="hint">Bitcoin24's five strategies. Each shows the freedom year it gives you.</p>
+        <div class="seg n5" role="group" aria-label="Strategy" id="simStrats">
+          <button type="button" data-strat="0" aria-pressed="false"><small>Normie</small><b></b></button>
+          <button type="button" data-strat="1" aria-pressed="false"><small>BTC 10%</small><b></b></button>
+          <button type="button" data-strat="2" aria-pressed="true"><small>BTC Maxi</small><b></b></button>
+          <button type="button" data-strat="3" aria-pressed="false"><small>Double Maxi</small><b></b></button>
+          <button type="button" data-strat="4" aria-pressed="false"><small>Triple Maxi</small><b></b></button>
+        </div>
+        <p class="hint" id="stratHint"></p>
+      </fieldset>
+
+      <fieldset class="grp">
+        <legend>Tax on bitcoin you sell</legend>
+        <div class="control">
+          <label for="oBasis">Your cost basis per bitcoin</label>
+          <span class="field"><input id="oBasis" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" aria-describedby="basisHint"></span>
+          <input type="range" id="sBasis" min="0" max="1000" value="619" aria-label="Cost basis per bitcoin">
+          <p class="hint" id="basisHint">The average price you paid for the bitcoin you hold today. Type it or slide. Bitcoin the simulator buys for you later adds to your basis at its price.</p>
+        </div>
+        <div class="control">
+          <label for="oCgt">Capital gains tax rate</label>
+          <span class="field"><input id="oCgt" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" aria-describedby="cgtHint"></span>
+          <input type="range" id="sCgt" min="0" max="60" step="0.5" value="25" aria-label="Capital gains tax rate">
+          <p class="hint" id="cgtHint">Set it for where you live. The tax on each sale comes out of your stack, so the same bill takes more bitcoin.</p>
+        </div>
+      </fieldset>
+
+      <fieldset class="grp">
+        <legend>Bitcoin's price</legend>
+        <div class="control">
+          <label for="simPx">Price today</label>
+          <span class="field"><input id="simPx" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" aria-describedby="pxHint"></span>
+          <p class="hint" id="pxHint"></p>
+        </div>
+        <div class="seg n2" role="group" aria-label="Price model" id="simModels">
+          <button type="button" data-model="b24" aria-pressed="true">Bitcoin24 (Saylor)<small>yearly returns to 2045</small></button>
+          <button type="button" data-model="power" aria-pressed="false">Power law<small>long-run trend</small></button>
+        </div>
+        <div class="seg n3" role="group" aria-label="Price path" id="simCases">
+          <button type="button" data-case="bear" aria-pressed="false">Bear<small id="cbear"></small></button>
+          <button type="button" data-case="base" aria-pressed="true">Base<small id="cbase"></small></button>
+          <button type="button" data-case="bull" aria-pressed="false">Bull<small id="cbull"></small></button>
+        </div>
+        <p class="hint" id="caseHint"></p>
+        <div class="control">
+          <label for="sVol">Bitcoin's fall in each four-year cycle</label><output id="oVol" for="sVol"></output>
+          <input type="range" id="sVol" min="0" max="85" step="1" value="0" aria-describedby="volHint">
+          <p class="hint" id="volHint">Bitcoin24's path is smooth. Above 0%, bitcoin swings around it: a high every four years (first in 2027), then a fall this deep the next year, then back on the path. Each later fall is 15% smaller than the one before, as bitcoin matures. Bitcoin fell 77% from its 2021 high to its 2022 low.</p>
+        </div>
+      </fieldset>
+
+      <details class="sim-adv" id="simAdv">
+        <summary><span class="adv-title">Advanced: borrow or earn instead of selling</span><span class="adv-now" id="advNow"></span></summary>
+        <div class="adv-body">
+          <p class="hint">From your freedom year, your costs come from shares, bonds and cash first, then from your bitcoin. Pick how your bitcoin pays its part. Each path shows the freedom year it gives you.</p>
+          <div class="seg n3" role="group" aria-label="How bitcoin pays for your life" id="simPaths">
+            <button type="button" data-path="sell" aria-pressed="true"><small>Sell</small><b></b></button>
+            <button type="button" data-path="borrow" aria-pressed="false"><small>Borrow</small><b></b></button>
+            <button type="button" data-path="strc" aria-pressed="false"><small>Swap for STRC</small><b></b></button>
+          </div>
+          <div class="panel" id="panel-sell">
+            <p>You sell bitcoin each year for what is left, and pay capital gains tax on each sale.</p>
+          </div>
+          <div class="panel" id="panel-borrow" hidden>
+            <p>You borrow against your bitcoin instead of selling it. The interest adds to the loan, and a loan is not a sale, so no tax is due. If the loan reaches your cap, you sell enough bitcoin to bring it back down to the cap. That sale is taxed.</p>
+            <div class="control">
+              <label for="sRate">Loan interest today</label><output id="oRate" for="sRate"></output>
+              <input type="range" id="sRate" min="0" max="20" step="0.5" value="10" aria-describedby="rateHint">
+              <p class="hint" id="rateHint">As bitcoin becomes a reserve asset, borrowing against it gets cheaper: the rate falls in a straight line to the mortgage rate (5%, under Assumptions) by 2050.</p>
+            </div>
+            <div class="control">
+              <label for="sLtv">Most you owe, as a share of your bitcoin's value</label><output id="oLtv" for="sLtv"></output>
+              <input type="range" id="sLtv" min="5" max="60" step="1" value="15" aria-describedby="ltvHint">
+              <p class="hint" id="ltvHint">Your cap, as a share of your bitcoin's value.</p>
+            </div>
+            <div class="control">
+              <label for="sLiq">The lender sells your bitcoin at</label><output id="oLiq" for="sLiq"></output>
+              <input type="range" id="sLiq" min="40" max="95" step="1" value="80" aria-describedby="liqHint">
+              <p class="hint" id="liqHint">The loan's share of your bitcoin's value at which the lender liquidates. The results show how far the price could fall, at your loan's riskiest point, before that happens. The model assumes the lender never calls the loan, changes its terms or fails.</p>
+            </div>
+          </div>
+          <div class="panel" id="panel-strc" hidden>
+            <p>In your freedom year you sell part of your bitcoin, pay the tax, and buy STRC, Strategy's variable-rate preferred stock, at its $100 stated amount. Its dividends pay your costs before anything else. If your bitcoin runs out, you sell STRC at $100.</p>
+            <div class="control">
+              <label for="sShare">Share of your bitcoin to swap</label><output id="oShare" for="sShare"></output>
+              <input type="range" id="sShare" min="0" max="100" step="1" value="30">
+            </div>
+            <div class="control">
+              <label for="sDiv">STRC dividend today</label><output id="oDiv" for="sDiv"></output>
+              <input type="range" id="sDiv" min="0" max="20" step="0.25" value="12" aria-describedby="divHint">
+              <p class="hint" id="divHint">12% was the rate in September 2026, up from 9% at launch in July 2025. Strategy sets it each month, and the dividend is not guaranteed. The model moves it in a straight line to the mortgage rate by 2050, as bitcoin-backed credit gets cheaper.</p>
+            </div>
+            <label class="check"><input type="checkbox" id="sRoc" checked><span>Count dividends as return of capital</span></label>
+            <p class="hint">Strategy's filings expect its recent STRC dividends to be non-taxable returns of capital for US federal tax, up to what you paid for your STRC. The model assumes every dividend is treated that way until they have returned what you paid; after that, it taxes them as capital gains. That may not hold. Turn this off to tax every dividend as income, at the rate under Assumptions.</p>
+            <p class="hint">STRC's price moves. It fell to about $71 in the June 2026 selloff and was near $98.65, below its $100 stated amount, in late September 2026. The model holds it at $100 and assumes every dividend is paid.</p>
+          </div>
+        </div>
+      </details>
+
+      <details class="asm" id="asm">
+        <summary>Assumptions</summary>
+        <div class="asm-body">
+          <fieldset>
+            <legend>Bitcoin24 price, <span id="asmCase">Base</span> case</legend>
+            <div class="num"><label for="aArr">Return in 2025</label><input id="aArr" type="number" step="any" min="0" max="300"><i>%</i></div>
+            <div class="num"><label for="aRed">Lower each year by</label><input id="aRed" type="number" step="any" min="0" max="100"><i>pts</i></div>
+            <div class="num"><label for="aFloor">Steady-state return</label><input id="aFloor" type="number" step="any" min="0" max="300"><i>%</i></div>
+            <p class="hint">Used by the Bitcoin24 price model. Bear, Base and Bull keep their own values.</p>
+          </fieldset>
+          <fieldset>
+            <legend>Mix of everything else you own</legend>
+            <div class="num"><label for="mEq">Equity (shares)</label><input id="mEq" type="number" step="any" min="0" max="100"><i>%</i></div>
+            <div class="num"><label for="mRe">Real estate</label><input id="mRe" type="number" step="any" min="0" max="100"><i>%</i></div>
+            <div class="num"><label for="mBd">Bonds</label><input id="mBd" type="number" step="any" min="0" max="100"><i>%</i></div>
+            <div class="num"><label for="mCu">Currency (cash)</label><input id="mCu" type="number" step="any" min="0" max="100"><i>%</i></div>
+            <p class="hint" id="mixTotal"></p>
+          </fieldset>
+          <fieldset>
+            <legend>Returns per year</legend>
+            <div class="num"><label for="rEq">Equity</label><input id="rEq" type="number" step="any" min="-50" max="100"><i>%</i></div>
+            <div class="num"><label for="rRe">Real estate</label><input id="rRe" type="number" step="any" min="-50" max="100"><i>%</i></div>
+            <div class="num"><label for="rBd">Bond yield, before tax</label><input id="rBd" type="number" step="any" min="-50" max="100"><i>%</i></div>
+            <div class="num"><label for="rCu">Cash yield, before tax</label><input id="rCu" type="number" step="any" min="-50" max="100"><i>%</i></div>
+            <p class="hint">Bitcoin24 builds equity and real estate returns from 6% inflation and 3% innovation growth, adjusted for monetization and dilution.</p>
+          </fieldset>
+          <fieldset>
+            <legend>Income and debt</legend>
+            <div class="num"><label for="aTax">Income tax on yields</label><input id="aTax" type="number" step="any" min="0" max="100"><i>%</i></div>
+            <div class="num"><label for="aGrow">Earnings growth</label><input id="aGrow" type="number" step="any" min="-50" max="100"><i>%</i></div>
+            <div class="num"><label for="aMort">Mortgage, share of real estate</label><input id="aMort" type="number" step="any" min="0" max="200"><i>%</i></div>
+            <div class="num"><label for="aRate">Mortgage rate</label><input id="aRate" type="number" step="any" min="0" max="50"><i>%</i></div>
+            <p class="hint">By 2050, bitcoin loans and STRC's dividend fall to this rate.</p>
+          </fieldset>
+          <fieldset>
+            <legend>Growth eases in the long run</legend>
+            <div class="num"><label for="eAfter">Starting after</label><input id="eAfter" type="number" step="1" min="2026" max="2090"><i></i></div>
+            <div class="num"><label for="eFloor">Long-run rate</label><input id="eFloor" type="number" step="any" min="0" max="20"><i>%</i></div>
+            <div class="num"><label for="eHalf">The gap halves every</label><input id="eHalf" type="number" step="any" min="1" max="100"><i>yrs</i></div>
+            <p class="hint">From then on, your inflation and bitcoin's yearly growth ease toward the long-run rate, so neither compounds at its early pace for ever. This rule is the simulator's own; Bitcoin24 stops at 2045.</p>
+          </fieldset>
+          <button type="button" class="btn" id="asmReset">Reset to the defaults</button>
+        </div>
+      </details>
+    </div>
+  </div>
+
+  <details class="sim-math" id="simMath">
+    <summary>Show the math, year by year</summary>
+    <div class="math-wrap">
+      <table>
+        <thead><tr><th>Year</th><th>Bitcoin price</th><th>Your costs</th><th>Bitcoin bought (+) or sold (−)</th><th>Of that, sold for tax</th><th id="thLoan" hidden>Loan, and its share of your bitcoin</th><th>Bitcoin left</th></tr></thead>
+        <tbody id="mathRows"></tbody>
+      </table>
+    </div>
+    <p class="hint" id="mathNote"></p>
+  </details>
+
+  <div class="sim-notes">
+    <p>With the Bitcoin24 price model, bitcoin starts at your price today and grows at the model's rate for each calendar year. In the Base case that rate is 50% in 2025 and falls 2.5 points a year to a floor of 20%. Bear runs from 25% to 18%, falling 0.5 points a year. Bull runs from 75% to 25%, falling 5 points a year. Bitcoin24 stops at 2045. After that, the simulator lets bitcoin grow only as fast as the world's other assets, so its share stays at the 2045 level. The power-law model follows bitcoin's long-run trend (price ≈ 1.0117×10⁻¹⁷ × days since the genesis block, raised to the 5.82), scaled by your price path. Its trend price today is about <span id="trendToday"></span>. After 2045, in both models, bitcoin's yearly growth and your inflation ease toward 2%, the gap halving every 5 years, so neither compounds for ever (you can change this under Assumptions). Everything after 2045 is ours, not Saylor's. The plan ends in 2050: beyond it, too much will change for these numbers to mean much. Over that time bitcoin matures: loan rates and STRC's dividend fall in a straight line to the mortgage rate by 2050. The four-year cycle is ours too: at 0% bitcoin follows the smooth path; above it, bitcoin rises above the path every four years, falls the chosen share of its price the next year, and returns to the path, each fall 15% smaller than the last. Numbers in red are in a warning zone; the reason is listed under the results.</p>
+    <p>Your strategy acts today: it moves part of your shares, bonds and cash into bitcoin, and Double and Triple Maxi also borrow against your real estate. Your other assets grow at Bitcoin24's rates, with bond and cash yields taxed. Your mortgage grows at its rate and is never paid down. While you work, your pay covers your costs; if it does not, the gap comes out of your savings first, then out of what you own. From next year until your freedom year you invest what is left of your savings as your strategy says. From then on you stop earning and buying. Your costs rise at your inflation rate every year from today, so your first free year costs more than today's figure. Your real estate is never sold. What you own minus what you owe must stay above zero through 2050.</p>
+    <p>The freedom-year search, the years after it, and the tax, borrowing and STRC paths are this simulator's own additions to Bitcoin24. Sales use your average cost. A loan that reaches the lender's liquidation level ends the run. STRC facts: <a href="https://www.strategy.com/strc/learn">Strategy</a>, <a href="https://www.sec.gov/Archives/edgar/data/0001050446/000119312526286871/mstr-20260629.htm">SEC filing, June 2026</a>, <a href="https://www.strategy.com/press/strategy-announces-approval-of-strc-semi-monthly-dividends_06-08-2026">semi-monthly dividends</a>, CoinDesk in <a href="https://www.coindesk.com/markets/2026/06/01/strategy-holds-strc-dividend-at-11-5-for-fourth-straight-month">June</a> and <a href="https://www.coindesk.com/markets/2026/09/25/strategy-proposes-daily-dividends-to-bring-strc-back-toward-usd100">September 2026</a>. An illustration, not financial or tax advice. The simulator's code is on GitHub as <a href="https://github.com/darbsllim/sovereignty-simulator">a fork of Bitcoin24</a>.</p>
+  </div>
+</section>
+
+<div class="page">
   <section id="made">
     <a class="stamp" href="#stage" data-seek="1.2">0:01 in the film</a>
     <h2>Made in the open</h2>
-    <p>There is no video file on this page. The film is about twelve thousand lines of JavaScript that draw each frame with three.js as the song plays, so the picture you see is being made on your own graphics chip. The same code, run frame by frame, renders the video file. The coins are photographed museum pieces, all public domain. The song was generated with ElevenLabs Music.</p>
+    <p>There is no video file on this page. The film is over fourteen thousand lines of JavaScript that draw each frame with three.js as the song plays, so the picture you see is being made on your own graphics chip. The same code, run frame by frame, renders the video file. The coins are photographed museum pieces, all public domain. The song was generated with ElevenLabs Music.</p>
     <p><a id="repoLink" class="repo" href="https://github.com/sene1337/cant-print-the-proof">Read the code on GitHub</a></p>
   </section>
 
   <footer class="credits">
     <p>Coin, moon, stone and paper-note photographs: public domain and CC0, from The Metropolitan Museum of Art, the Smithsonian and Wikimedia Commons (<a href="tex/CREDITS.md">full list</a>). Typefaces: Cormorant Garamond, Figtree, JetBrains Mono, Playfair Display (SIL Open Font License). Code: MIT licence.</p>
   </footer>
+</div>
 </main>
 <script type="module" src="js/main.js"></script>
+<script type="module" src="js/sim/ui.js"></script>
 </body>
 </html>

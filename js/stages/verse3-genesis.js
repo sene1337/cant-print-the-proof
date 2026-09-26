@@ -167,7 +167,8 @@ export async function verse3GenesisStage(film) {
       body.visible = fr > 0;
       for (const m of mats) {
         m.userData.reveal.uReveal.value = easeInOut(fr);
-        m.emissiveIntensity = 2.2 * (0.75 + 0.25 * clamp((t - tGlow) * 4)) + 2.2 * Math.exp(-Math.max(0, t - tGlow) * 3) * (t > tGlow ? 0.8 : 0);
+        const gd = t - tGlow;
+        m.emissiveIntensity = 2.2 * (0.75 + 0.25 * smooth(clamp(gd * 4))) + 0.9 * (gd > 0 ? smooth(clamp(gd / 0.18)) * Math.exp(-Math.max(0, gd - 0.18) * 2.5) : 0);
       }
     },
     // The headline slams in on tStamp, white-hot, then cools to orange.

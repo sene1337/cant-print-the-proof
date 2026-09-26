@@ -1,9 +1,9 @@
 // VERSE 2 China: the Ming note (1375, "Da Ming Tongxing Baochao", the museum photo) on a lacquer table.
-// A jade seal slams down and leaves a red seal; then the note burns from its edges to nothing.
+// A bronze seal slams down and re-inks the note's own treasury seal; then the note burns from its edges to nothing.
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { studioEnv } from '../film.js';
-import { loadImage, TEX } from '../tex.js';
+import { loadImage, TEX, normalFromHeight } from '../tex.js';
 import { Dust } from '../props/dust.js';
 import { clamp, lerp, hash1, rng, noise1, easeIn, easeOut } from '../util.js';
 import {
@@ -15,72 +15,133 @@ import {
 const CROP = { x: 20, y: 30, w: 598, h: 925 };
 export const NOTE_H = 2.0;
 export const NOTE_W = NOTE_H * (CROP.w / CROP.h);
-// Where the new seal lands on the note (uv), and its size in uv width.
-const SEAL_UV = [0.5, 0.29], SEAL_W = 0.36;
+// The note's own lower seal (the Ming treasury seal, stamped in folded seal script), measured in crop pixels.
+// The stamp re-inks this real seal: nothing on the impression is invented.
+const SEAL_PX = { x0: 199, y0: 526, x1: 397, y1: 747 };
+const SEAL_UV = [(SEAL_PX.x0 + SEAL_PX.x1) / 2 / CROP.w, 1 - (SEAL_PX.y0 + SEAL_PX.y1) / 2 / CROP.h];
 export const SEAL_POS = [(SEAL_UV[0] - 0.5) * NOTE_W, 0, -(SEAL_UV[1] - 0.5) * NOTE_H];
-export const SEAL_SIZE = SEAL_W * NOTE_W;
+// The impression's size on the table (x, z), and the bronze seal's face, a little larger.
+const IMP_W = ((SEAL_PX.x1 - SEAL_PX.x0) / CROP.w) * NOTE_W, IMP_D = ((SEAL_PX.y1 - SEAL_PX.y0) / CROP.h) * NOTE_H;
+export const FACE_W = IMP_W + 0.035, FACE_D = IMP_D + 0.035;
 
-// A seal-script-like glyph built from character parts (boxes, bars, crosses), white on red (a "baiwen" seal).
-function part(g, kind, x, y, w, h) {
-  const box = () => g.strokeRect(x, y, w, h);
-  const hl = (f) => { g.moveTo(x, y + h * f); g.lineTo(x + w, y + h * f); };
-  const vl = (f) => { g.moveTo(x + w * f, y); g.lineTo(x + w * f, y + h); };
-  g.beginPath();
-  if (kind === 0) box();                                   // kou: a box
-  else if (kind === 1) { box(); hl(0.5); }                  // ri: box with a bar
-  else if (kind === 2) { box(); hl(0.34); hl(0.67); }       // mu: box with two bars
-  else if (kind === 3) { box(); hl(0.5); vl(0.5); }         // tian: a field
-  else if (kind === 4) { hl(0); hl(0.5); hl(1); vl(0.5); }  // wang
-  else if (kind === 5) { hl(0.08); hl(0.5); hl(0.92); }     // san: three bars
-  else if (kind === 6) { vl(0.12); vl(0.5); vl(0.88); hl(0); } // a comb
-  else { hl(0.3); vl(0.5); hl(1); }                         // tu
-  g.stroke();
+// From the cropped photo: a copy with the seal's red ink lifted off (black ink kept), a copy with the same
+// seal freshly re-inked, and the seal alone (mirrored, red on clear) for the paste on the bronze face.
+function sealLayers(src) {
+  const W = src.width, H = src.height;
+  const g = src.getContext('2d');
+  const d = g.getImageData(0, 0, W, H).data;
+  const red = (i) => d[i] - (d[i + 1] + d[i + 2]) / 2;
+  // local paper colour: blur only the plain paper pixels (not red ink, not black ink)
+  const [pc, pg] = canvas2d(W, H);
+  const pd = pg.createImageData(W, H);
+  for (let i = 0; i < W * H * 4; i += 4) {
+    const lum = 0.3 * d[i] + 0.59 * d[i + 1] + 0.11 * d[i + 2];
+    const ok = red(i) < 16 && lum > 105;
+    pd.data[i] = d[i]; pd.data[i + 1] = d[i + 1]; pd.data[i + 2] = d[i + 2]; pd.data[i + 3] = ok ? 255 : 0;
+  }
+  pg.putImageData(pd, 0, 0);
+  const [bc, bg] = canvas2d(W, H);
+  bg.filter = 'blur(9px)';
+  bg.drawImage(pc, 0, 0);
+  const paper = bg.getImageData(0, 0, W, H).data;
+  const pad = 16, feather = 12;
+  const win = (x, y) => {
+    const dx = Math.max(SEAL_PX.x0 - pad - x, 0, x - SEAL_PX.x1 - pad);
+    const dy = Math.max(SEAL_PX.y0 - pad - y, 0, y - SEAL_PX.y1 - pad);
+    return clamp(1 - Math.hypot(dx, dy) / feather);
+  };
+  const [plainC, plainG] = canvas2d(W, H);
+  const [sealC, sealG] = canvas2d(W, H);
+  const [maskC, maskG] = canvas2d(W, H);
+  const po = plainG.createImageData(W, H), so = sealG.createImageData(W, H), mo = maskG.createImageData(W, H);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = (y * W + x) * 4;
+      const w = win(x, y);
+      let r = d[i], gg = d[i + 1], b = d[i + 2];
+      let ink = 0;
+      if (w > 0) {
+        const pa = paper[i + 3] > 8 ? 1 : 0;
+        const pr = pa ? paper[i] : 186, pgc = pa ? paper[i + 1] : 170, pb = pa ? paper[i + 2] : 142;
+        // red ink barely touches the red channel, black ink darkens it: R / paperR is the black-ink transmission
+        const t = clamp(d[i] / Math.max(1, pr), 0, 1.08);
+        const sR = clamp((red(i) - 6) / 14) * w;
+        r = lerp(d[i], pr * t, sR); gg = lerp(d[i + 1], pgc * t, sR); b = lerp(d[i + 2], pb * t, sR);
+        ink = clamp((red(i) - 10) / 18) * clamp(1 - Math.max(SEAL_PX.x0 - x, 0, x - SEAL_PX.x1, SEAL_PX.y0 - y, 0, y - SEAL_PX.y1) / 3);
+      }
+      po.data[i] = r; po.data[i + 1] = gg; po.data[i + 2] = b; po.data[i + 3] = 255;
+      // fresh cinnabar works like a red filter over the paper
+      const k = ink * 0.97;
+      so.data[i] = r * lerp(1, 1.06, k); so.data[i + 1] = gg * lerp(1, 0.2, k); so.data[i + 2] = b * lerp(1, 0.16, k); so.data[i + 3] = 255;
+      mo.data[i] = 205; mo.data[i + 1] = 30; mo.data[i + 2] = 22; mo.data[i + 3] = ink * 255;
+    }
+  }
+  plainG.putImageData(po, 0, 0);
+  sealG.putImageData(so, 0, 0);
+  maskG.putImageData(mo, 0, 0);
+  // the paste on the seal's face: the impression, mirrored, cropped to the seal
+  const [fc, fg] = canvas2d(256, 256);
+  fg.fillStyle = '#5a1510'; fg.fillRect(0, 0, 256, 256);
+  fg.save(); fg.translate(256, 0); fg.scale(-1, 1);
+  const mw = SEAL_PX.x1 - SEAL_PX.x0, mh = SEAL_PX.y1 - SEAL_PX.y0;
+  const sx = 256 / (mw + 2 * 8), sy = 256 / (mh + 2 * 8);
+  fg.drawImage(maskC, SEAL_PX.x0 - 8, SEAL_PX.y0 - 8, mw + 16, mh + 16, 0, 0, 256, 256);
+  fg.restore();
+  return { plain: plainC, sealed: sealC, face: fc };
 }
 
-function glyph(g, x, y, s, seed) {
-  const R = rng(seed);
-  g.lineWidth = s * 0.085; g.lineCap = 'square'; g.lineJoin = 'miter';
-  const k = () => Math.floor(R() * 8);
-  const layout = Math.floor(R() * 3);
-  if (layout === 0) {        // left and right
-    part(g, k(), x, y, s * 0.36, s);
-    part(g, k(), x + s * 0.48, y, s * 0.52, s);
-  } else if (layout === 1) { // top and bottom
-    part(g, k(), x, y, s, s * 0.38);
-    part(g, k(), x, y + s * 0.52, s, s * 0.48);
-  } else {                   // enclosure
-    g.beginPath(); g.moveTo(x, y + s); g.lineTo(x, y); g.lineTo(x + s, y); g.lineTo(x + s, y + s); g.stroke();
-    part(g, k(), x + s * 0.22, y + s * 0.24, s * 0.56, s * 0.58);
+// Cast bronze with green patina: colour and a roughness (G) / metalness (B) map from one noise field.
+function bronzeMaps() {
+  const F = noiseField(256, 61, 5);
+  const [cc, cg] = canvas2d(256, 256);
+  const [rc, rg] = canvas2d(256, 256);
+  const ci = cg.createImageData(256, 256), ri = rg.createImageData(256, 256);
+  for (let i = 0; i < 256 * 256; i++) {
+    const n = F.data[i];
+    const pat = clamp((n - 0.66) / 0.2) * 0.8;     // a little patina in the low spots of the noise
+    const speck = hash1(i * 7 + 3) < 0.03 ? 0.25 : 0;
+    const bz = [0.5, 0.34, 0.18], gr = [0.24, 0.31, 0.25];
+    for (let k = 0; k < 3; k++) ci.data[i * 4 + k] = Math.round(255 * clamp(lerp(bz[k], gr[k], pat) * (0.85 + 0.3 * n) - speck * 0.2));
+    ci.data[i * 4 + 3] = 255;
+    ri.data[i * 4] = 0;
+    ri.data[i * 4 + 1] = Math.round(255 * lerp(0.42, 0.8, pat));
+    ri.data[i * 4 + 2] = Math.round(255 * lerp(0.9, 0.15, pat));
+    ri.data[i * 4 + 3] = 255;
   }
+  cg.putImageData(ci, 0, 0);
+  rg.putImageData(ri, 0, 0);
+  const col = canvasTex(cc, { repeat: true });
+  const orm = canvasTex(rc, { srgb: false, repeat: true });
+  return { col, orm };
 }
 
-function drawSeal(g, cx, cy, size, { mirror = false, ink = 1 } = {}) {
-  g.save();
-  g.translate(cx, cy);
-  if (mirror) g.scale(-1, 1);
-  const h = size / 2;
-  // red field, slightly uneven like stamped cinnabar paste
-  g.fillStyle = `rgba(196, 22, 16, ${0.93 * ink})`;
-  g.beginPath(); g.roundRect(-h, -h, size, size, size * 0.04); g.fill();
-  // carved white: inner border and four glyphs
-  g.globalCompositeOperation = 'destination-out';
-  g.strokeStyle = 'rgba(0,0,0,1)';
-  g.lineWidth = size * 0.035;
-  g.strokeRect(-h * 0.86, -h * 0.86, h * 1.72, h * 1.72);
-  const cs = h * 0.62;
-  let k = 0;
-  for (const [ox, oy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
-    glyph(g, ox * h * 0.4 - cs / 2, oy * h * 0.4 - cs / 2, cs, 71 + k * 13);
-    k++;
+// Tortoise-shell scutes as a height canvas on the hemisphere's uv (v = 1 at the top).
+function shellHeight() {
+  const W = 512, H = 256;
+  const [c, g] = canvas2d(W, H);
+  g.fillStyle = '#b0b0b0'; g.fillRect(0, 0, W, H);
+  // plates: a crown at the top, two rings of plates below, each softly domed, with grooves between
+  const rings = [[0, 0.3, 1], [0.3, 0.62, 5], [0.62, 1.0, 11]];
+  for (const [v0, v1, n] of rings) {
+    for (let k = 0; k < n; k++) {
+      const u0 = (k + (n > 1 ? 0.5 * (v0 > 0.5) : 0)) / n;
+      const cx = (u0 + 0.5 / n) * W, cy = ((v0 + v1) / 2) * H;
+      const rx = (0.5 / n) * W, ry = ((v1 - v0) / 2) * H;
+      const gr = g.createRadialGradient(cx, cy, 0, cx, cy, Math.max(rx, ry));
+      gr.addColorStop(0, '#f0f0f0'); gr.addColorStop(0.75, '#bdbdbd'); gr.addColorStop(1, '#8a8a8a');
+      g.fillStyle = gr;
+      g.fillRect(cx - rx, cy - ry, rx * 2, ry * 2);
+      g.fillRect(cx - rx + W, cy - ry, rx * 2, ry * 2);
+      g.fillRect(cx - rx - W, cy - ry, rx * 2, ry * 2);
+    }
+    g.fillStyle = '#3a3a3a';
+    g.fillRect(0, v1 * H - 3, W, 6);
+    for (let k = 0; k < n && n > 1; k++) {
+      const x = ((k + 0.5 * (v0 > 0.5)) / n) * W;
+      g.fillRect(x - 3, v0 * H, 6, (v1 - v0) * H);
+    }
   }
-  // speckle where the paste did not take
-  const R = rng(5);
-  for (let i = 0; i < 900; i++) {
-    g.fillStyle = `rgba(0,0,0,${R() * 0.5})`;
-    const r = R() * size * 0.012 + 0.5;
-    g.beginPath(); g.arc((R() - 0.5) * size, (R() - 0.5) * size, r, 0, Math.PI * 2); g.fill();
-  }
-  g.restore();
+  return c;
 }
 
 export async function mingStage(film) {
@@ -120,11 +181,9 @@ export async function mingStage(film) {
   const im = await loadImage(`${TEX.base}tex/mingnote.jpg`);
   const [c0, g0] = canvas2d(CROP.w, CROP.h);
   g0.drawImage(im, CROP.x, CROP.y, CROP.w, CROP.h, 0, 0, CROP.w, CROP.h);
-  const plainTex = canvasTex(c0);
-  const [c1, g1] = canvas2d(CROP.w, CROP.h);
-  g1.drawImage(c0, 0, 0);
-  drawSeal(g1, SEAL_UV[0] * CROP.w, (1 - SEAL_UV[1]) * CROP.h, SEAL_W * CROP.w);
-  const sealedTex = canvasTex(c1);
+  const layers = sealLayers(c0);
+  const plainTex = canvasTex(layers.plain);
+  const sealedTex = canvasTex(layers.sealed);
 
   const field = noiseField(256, 33);
   const U = burnUniforms(field, { mode: 0, aspect: NOTE_W / NOTE_H, noiseAmp: 0.34, noiseScale: 1.6, charW: 0.1, emberW: 0.018, emberGain: 3.2, emberCol: [1, 0.36, 0.05] });
@@ -158,51 +217,62 @@ export async function mingStage(film) {
   note.receiveShadow = true;
   scene.add(note);
 
-  // The seal: one heavy block of veined dark-green jade, a chamfered column under a pyramid cap, red paste on its face.
+  // The seal: a square block of cast bronze with a carved tortoise knob, the classic official seal.
   const seal = new THREE.Group();
-  const jadeTex = (() => {
-    const F = noiseField(256, 47, 5);
-    const W = 256, H = 512;
-    const [c, g] = canvas2d(W, H);
-    const img = g.createImageData(W, H);
-    for (let y = 0; y < H; y++) {
-      for (let x = 0; x < W; x++) {
-        const n = sampleField(F, x / W, y / H);
-        const vein = Math.pow(Math.abs(Math.sin((x * 0.008 + y * 0.005 + n * 2.2) * Math.PI)), 60);
-        const vein2 = Math.pow(Math.abs(Math.sin((x * 0.003 - y * 0.009 + n * 1.6) * Math.PI)), 90);
-        const m = n * n;
-        const base = [0.06 + 0.1 * m, 0.19 + 0.2 * m, 0.12 + 0.12 * m];
-        const v = Math.min(1, vein * 0.4 + vein2 * 0.3);
-        const vc = [0.6, 0.8, 0.66];
-        const i = (y * W + x) * 4;
-        for (let k = 0; k < 3; k++) img.data[i + k] = Math.round(255 * (base[k] + (vc[k] - base[k]) * v));
-        img.data[i + 3] = 255;
-      }
-    }
-    g.putImageData(img, 0, 0);
-    return canvasTex(c);
-  })();
-  const jade = clampHot(new THREE.MeshPhysicalMaterial({
-    color: 0xffffff, map: jadeTex, roughness: 0.32, clearcoat: 1, clearcoatRoughness: 0.08,
-    sheen: 0.5, sheenColor: new THREE.Color(0.55, 0.85, 0.65), sheenRoughness: 0.45,
-  }), 3);
-  const column = new THREE.Mesh(new RoundedBoxGeometry(SEAL_SIZE * 1.04, 0.78, SEAL_SIZE * 1.04, 5, 0.035), jade);
-  column.position.y = 0.39;
-  column.castShadow = true;
-  seal.add(column);
-  const cr = SEAL_SIZE * 0.52 * Math.SQRT2;
-  const cap = new THREE.Mesh(new THREE.CylinderGeometry(cr * 0.32, cr, 0.2, 4, 1), jade);
-  cap.rotation.y = Math.PI / 4;
-  cap.position.y = 0.88;
-  cap.castShadow = true;
-  seal.add(cap);
-  const knob = new THREE.Mesh(new THREE.SphereGeometry(SEAL_SIZE * 0.13, 24, 16), jade);
-  knob.scale.set(1, 0.8, 1);
-  knob.position.y = 1.0;
-  seal.add(knob);
-  const [cs, gs] = canvas2d(256, 256);
-  drawSeal(gs, 128, 128, 250, { mirror: true });
-  const paste = new THREE.Mesh(new THREE.PlaneGeometry(SEAL_SIZE, SEAL_SIZE), new THREE.MeshStandardMaterial({ map: canvasTex(cs), transparent: true, roughness: 0.6 }));
+  const bz = bronzeMaps();
+  const bronze = clampHot(new THREE.MeshPhysicalMaterial({
+    color: 0xffffff, map: bz.col, metalness: 1, roughness: 1, metalnessMap: bz.orm, roughnessMap: bz.orm,
+    envMapIntensity: 1.0,
+  }), 2.2);
+  const shellMat = bronze.clone();
+  shellMat.normalMap = normalFromHeight(shellHeight(), 3.0, 1.5);
+  shellMat.normalScale.set(1.6, 1.6);
+  clampHot(shellMat, 2.2);
+  const BASE_H = 0.3;
+  const base = new THREE.Mesh(new RoundedBoxGeometry(FACE_W, BASE_H, FACE_D, 4, 0.02), bronze);
+  base.position.y = BASE_H / 2;
+  base.castShadow = true;
+  seal.add(base);
+  const step = new THREE.Mesh(new RoundedBoxGeometry(FACE_W * 0.86, 0.05, FACE_D * 0.86, 3, 0.015), bronze);
+  step.position.y = BASE_H + 0.025;
+  step.castShadow = true;
+  seal.add(step);
+  const top = BASE_H + 0.05;
+  const turtle = new THREE.Group();
+  turtle.position.y = top;
+  const shell = new THREE.Mesh(new THREE.SphereGeometry(1, 48, 16, 0, Math.PI * 2, 0, Math.PI / 2), shellMat);
+  shell.scale.set(FACE_W * 0.34, 0.13, FACE_D * 0.38);
+  shell.position.y = 0.035;
+  shell.castShadow = true;
+  turtle.add(shell);
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(1, 0.06, 10, 48), bronze);
+  rim.rotation.x = Math.PI / 2;
+  rim.scale.set(FACE_W * 0.35, FACE_D * 0.39, 0.5);
+  rim.position.y = 0.035;
+  turtle.add(rim);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), bronze);
+  head.scale.set(0.038, 0.034, 0.07);
+  head.position.set(0, 0.075, FACE_D * 0.38 + 0.07);
+  head.rotation.x = -0.25;
+  head.castShadow = true;
+  turtle.add(head);
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.036, 0.09, 16), bronze);
+  neck.rotation.x = Math.PI / 2 - 0.35;
+  neck.position.set(0, 0.05, FACE_D * 0.38 + 0.01);
+  turtle.add(neck);
+  for (const [sx, sz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+    const leg = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), bronze);
+    leg.scale.set(0.05, 0.03, 0.04);
+    leg.position.set(sx * FACE_W * 0.3, 0.025, sz * FACE_D * 0.27);
+    leg.rotation.y = Math.atan2(sx, sz);
+    turtle.add(leg);
+  }
+  const tail = new THREE.Mesh(new THREE.ConeGeometry(0.02, 0.07, 10), bronze);
+  tail.rotation.x = -Math.PI / 2;
+  tail.position.set(0, 0.03, -FACE_D * 0.4 - 0.02);
+  turtle.add(tail);
+  seal.add(turtle);
+  const paste = new THREE.Mesh(new THREE.PlaneGeometry(FACE_W - 0.01, FACE_D - 0.01), new THREE.MeshStandardMaterial({ map: canvasTex(layers.face), roughness: 0.5 }));
   paste.rotation.x = Math.PI / 2;
   paste.position.y = -0.001;
   seal.add(paste);

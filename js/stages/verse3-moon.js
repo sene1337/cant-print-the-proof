@@ -233,7 +233,7 @@ export async function verse3MoonStage(film) {
       const fx = d.x, fz = d.z, fl = Math.hypot(fx, fz) || 1;
       const ux = fx / fl, uz = fz / fl, px = -uz, pz = ux;
       const p = glitter.geometry.attributes.position.array, b = glitter.geometry.attributes.aBright.array;
-      const tick = Math.floor(t * 7);
+
       for (let i = 0; i < NG; i++) {
         const h = (k) => hash1(i * 13 + k);
         const dist = 4.5 + 70 * Math.pow(h(1), 1.7);
@@ -242,8 +242,10 @@ export async function verse3MoonStage(film) {
         p[i * 3] = cam.position.x + ux * dist + px * side;
         p[i * 3 + 1] = SEA_Y + 0.01;
         p[i * 3 + 2] = cam.position.z + uz * dist + pz * side;
-        const tw = hash1(i * 31 + tick * 977);
-        b[i] = tw > 0.55 ? (tw - 0.55) / 0.45 * (1 - Math.abs(side) / (width * 1.05)) * 0.9 : 0;
+        // each glint swells and fades on its own slow cycle (2 to 5 s), never a flicker
+        const w = 1.3 + 1.8 * h(5), ph = h(6) * 6.283;
+        const tw = Math.max(0, Math.sin(t * w + ph));
+        b[i] = tw * tw * (1 - Math.abs(side) / (width * 1.05)) * 0.8;
       }
       glitter.geometry.attributes.position.needsUpdate = true;
       glitter.geometry.attributes.aBright.needsUpdate = true;

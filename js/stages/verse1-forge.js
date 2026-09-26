@@ -3,8 +3,9 @@
 import * as THREE from 'three';
 import { studioEnv } from '../film.js';
 import { Coin } from '../props/coin.js';
-import { coinFace } from '../tex.js';
+import { coinFace, normalFromHeight, loadImage, TEX } from '../tex.js';
 import { clamp, hash1, easeOut, easeInOut, lerp, smooth } from '../util.js';
+import { forgedIron } from '../props/verse1-metal.js';
 
 const MOLTEN = /* glsl */ `
   uniform float uTime, uHeat;
@@ -86,6 +87,102 @@ function taperedTube(curve, segs, radial, radius) {
   return g;
 }
 
+// An environment of soft lobes over a smooth vertical gradient. lobes: { dir, color, gain, width }.
+function lobeEnv(renderer, lobes, { top, mid, bottom }) {
+  const scene = new THREE.Scene();
+  const dome = new THREE.SphereGeometry(50, 96, 48);
+  const p = dome.attributes.position;
+  const col = [];
+  const L = lobes.map((l) => ({ ...l, d: new THREE.Vector3(...l.dir).normalize() }));
+  const v = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i).normalize();
+    const y = v.y;
+    const t = (y + 1) / 2; // 0 bottom .. 1 top, smooth
+    const base = [0, 1, 2].map((k) => (t < 0.5 ? bottom[k] + (mid[k] - bottom[k]) * smooth(t * 2) : mid[k] + (top[k] - mid[k]) * smooth(t * 2 - 1)));
+    for (const l of L) {
+      const w = Math.exp((v.dot(l.d) - 1) / l.width) * l.gain;
+      base[0] += l.color[0] * w; base[1] += l.color[1] * w; base[2] += l.color[2] * w;
+    }
+    col.push(...base);
+  }
+  dome.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  scene.add(new THREE.Mesh(dome, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide })));
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  const tex = pmrem.fromScene(scene, 0.01).texture;
+  pmrem.dispose();
+  return tex;
+}
+
+// A freshly cast and hammered blank: flat hammer facets, casting pits, a raised rim; colour with faint mottling.
+// Mapped like the coin faces (the disc fills the canvas; repeat 0.5, offset 0.5 on the face's shape coordinates).
+function castBlankTextures(size = 1024) {
+  const R = size / 2;
+  const hc = document.createElement('canvas'); hc.width = hc.height = size;
+  const hg = hc.getContext('2d');
+  const img = hg.createImageData(size, size);
+  const NP = 46;
+  const pts = [];
+  for (let i = 0; i < NP; i++) {
+    const a = hash1(i * 5 + 1) * Math.PI * 2, r = Math.sqrt(hash1(i * 5 + 2)) * R * 0.95;
+    pts.push({ x: R + Math.cos(a) * r, y: R + Math.sin(a) * r, sx: (hash1(i * 5 + 3) - 0.5) * 0.9, sy: (hash1(i * 5 + 4) - 0.5) * 0.9, b: hash1(i * 5 + 5) });
+  }
+  const facet = new Float32Array(size * size);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      let best = 1e9, bi = 0;
+      for (let k = 0; k < NP; k++) { const dx = x - pts[k].x, dy = y - pts[k].y, d = dx * dx + dy * dy; if (d < best) { best = d; bi = k; } }
+      const p = pts[bi];
+      const h = 0.5 + (p.sx * (x - p.x) + p.sy * (y - p.y)) / R * 0.6; // a tilted flat facet per hammer blow
+      facet[y * size + x] = bi;
+      const v = Math.max(0, Math.min(255, h * 255));
+      const i = (y * size + x) * 4;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = v; img.data[i + 3] = 255;
+    }
+  }
+  hg.putImageData(img, 0, 0);
+  // soften the facet edges a touch
+  const sc = document.createElement('canvas'); sc.width = sc.height = size;
+  const sg = sc.getContext('2d');
+  sg.filter = 'blur(2px)'; sg.drawImage(hc, 0, 0); sg.filter = 'none';
+  // casting pits
+  for (let i = 0; i < 320; i++) {
+    const a = hash1(i * 3 + 11) * Math.PI * 2, r = Math.sqrt(hash1(i * 3 + 12)) * R * 0.9;
+    const x = R + Math.cos(a) * r, y = R + Math.sin(a) * r, pr = 1.2 + Math.pow(hash1(i * 3 + 13), 3) * 5;
+    const gr = sg.createRadialGradient(x, y, 0, x, y, pr);
+    gr.addColorStop(0, 'rgba(0,0,0,0.55)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    sg.fillStyle = gr; sg.fillRect(x - pr, y - pr, pr * 2, pr * 2);
+  }
+  // the raised rim: a bright ring near the edge, falling softly inward
+  sg.lineWidth = R * 0.07; sg.strokeStyle = 'rgba(255,255,255,0.95)';
+  sg.beginPath(); sg.arc(R, R, R * 0.945, 0, Math.PI * 2); sg.stroke();
+  sg.lineWidth = R * 0.12; sg.strokeStyle = 'rgba(255,255,255,0.25)';
+  sg.beginPath(); sg.arc(R, R, R * 0.9, 0, Math.PI * 2); sg.stroke();
+  const normal = normalFromHeight(sc, 2.2, 1.2);
+  normal.repeat.set(0.5, 0.5); normal.offset.set(0.5, 0.5);
+  // colour: warm gold-white with faint facet-to-facet variation and darker pits
+  const cc = document.createElement('canvas'); cc.width = cc.height = size;
+  const cg = cc.getContext('2d');
+  cg.fillStyle = '#efe7d6'; cg.fillRect(0, 0, size, size);
+  const cimg = cg.getImageData(0, 0, size, size);
+  for (let i = 0; i < size * size; i++) {
+    const f = 0.93 + 0.07 * pts[facet[i]].b;
+    cimg.data[i * 4] *= f; cimg.data[i * 4 + 1] *= f; cimg.data[i * 4 + 2] *= f;
+  }
+  cg.putImageData(cimg, 0, 0);
+  for (let i = 0; i < 320; i++) {
+    const a = hash1(i * 3 + 11) * Math.PI * 2, r = Math.sqrt(hash1(i * 3 + 12)) * R * 0.9;
+    const x = R + Math.cos(a) * r, y = R + Math.sin(a) * r, pr = 1.2 + Math.pow(hash1(i * 3 + 13), 3) * 5;
+    const gr = cg.createRadialGradient(x, y, 0, x, y, pr);
+    gr.addColorStop(0, 'rgba(120,90,50,0.35)'); gr.addColorStop(1, 'rgba(120,90,50,0)');
+    cg.fillStyle = gr; cg.fillRect(x - pr, y - pr, pr * 2, pr * 2);
+  }
+  const color = new THREE.CanvasTexture(cc);
+  color.colorSpace = THREE.SRGBColorSpace; color.anisotropy = 8;
+  color.repeat.set(0.5, 0.5); color.offset.set(0.5, 0.5);
+  return { normal, color };
+}
+
 export async function forgeStage(film) {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x000000);
@@ -127,13 +224,13 @@ export async function forgeStage(film) {
   crucible.add(load);
   forge.add(crucible);
   // Tongs holding it from the upper left, and the iron ring round its waist.
-  const tongMat = new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.5, metalness: 0.8 });
+  const tongMat = forgedIron({ repeat: [1, 4] });
   const CPOS = new THREE.Vector3(-0.96, 1.4, 0);
   for (const z of [-0.6, 0.6]) {
     const a = CPOS.clone().add(new THREE.Vector3(0, 0, z));
     const b = CPOS.clone().add(new THREE.Vector3(-3.2, 1.6, z * 0.7));
     const len = a.distanceTo(b);
-    const t = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, len, 10), tongMat);
+    const t = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, len, 14), tongMat);
     t.position.copy(a).add(b).multiplyScalar(0.5);
     t.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
     forge.add(t);
@@ -179,22 +276,68 @@ export async function forgeStage(film) {
   // The planet: the cooled blank, and coins that come in from the dark to circle it.
   const planet = new THREE.Group();
   scene.add(planet);
+  // Its own studio, made only of soft round lobes of light: a flat gold face mirrors any straight edge
+  // (a soft box, a horizon) as a hard line across the coin, so there are none.
+  const planetEnv = lobeEnv(film.renderer, [
+    { dir: [-0.55, 0.6, 0.6], color: [1, 0.86, 0.66], gain: 2.4, width: 0.09 },
+    { dir: [0.1, 0.5, 1], color: [1, 0.82, 0.58], gain: 0.9, width: 0.45 },
+    { dir: [1, 0.2, -0.35], color: [1, 0.72, 0.42], gain: 1.6, width: 0.05 },
+    { dir: [0.2, -0.6, 0.8], color: [0.9, 0.55, 0.26], gain: 0.5, width: 0.35 },
+  ], { top: [0.26, 0.19, 0.12], mid: [0.17, 0.11, 0.06], bottom: [0.08, 0.05, 0.025] });
   const blankFace = await coinFace('stater', { blank: true });
-  const blank = new Coin({ radius: 1, thickness: 0.16, face: blankFace, metal: 'gold', seed: 12, env });
+  const blank = new Coin({ radius: 1, thickness: 0.16, face: blankFace, metal: 'gold', seed: 12, env: planetEnv });
+  // a cast blank, hammered flat: facets, pits and a raised rim that catches the light
+  const castTex = castBlankTextures();
+  blank.faceMat.roughness = 0.26; blank.sideMat.roughness = 0.3;
+  blank.faceMat.envMapIntensity = 1.3; blank.sideMat.envMapIntensity = 1.3;
+  blank.faceMat.normalMap = castTex.normal; blank.faceMat.map = castTex.color;
+  blank.faceMat.normalScale.set(1, 1);
   planet.add(blank);
-  const NC = 150;
-  const coinGeo = new THREE.CylinderGeometry(1, 1, 0.14, 40, 1);
-  const coinMat = new THREE.MeshPhysicalMaterial({ color: new THREE.Color(1.0, 0.72, 0.3), metalness: 1, roughness: 0.24, envMap: env });
-  const coins = new THREE.InstancedMesh(coinGeo, coinMat, NC);
+  // The coins that come to it: struck gold staters with the king's face, drawn as one instanced mesh.
+  const NC = 120;
+  const struck = await coinFace('stater', { size: 512 });
+  // Softer face colour for these small, drifting coins: their fine relief would otherwise shimmer as it moves.
+  {
+    const im = await loadImage(`${TEX.base}tex/stater_photo.jpg`);
+    const c = document.createElement('canvas'); c.width = c.height = 512;
+    const g = c.getContext('2d');
+    g.fillStyle = '#e9e4da'; g.fillRect(0, 0, 512, 512);
+    g.save(); g.beginPath(); g.arc(256, 256, 256 * 0.925, 0, Math.PI * 2); g.clip();
+    g.filter = 'grayscale(1) contrast(0.8) brightness(1.12) blur(1.2px)';
+    g.drawImage(im, 256 - 256 * 0.955, 256 - 256 * 0.955, 512 * 0.955, 512 * 0.955);
+    g.restore();
+    g.lineWidth = 256 * 0.075 * 1.1; g.strokeStyle = '#f4efe6';
+    g.beginPath(); g.arc(256, 256, 256 * (1 - 0.075 * 0.45), 0, Math.PI * 2); g.stroke();
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+    struck.color = t;
+  }
+  const coinGeo = new THREE.CylinderGeometry(1, 1, 0.12, 48, 1);
+  const coinSide = new THREE.MeshPhysicalMaterial({ color: new THREE.Color(1.0, 0.72, 0.3), metalness: 1, roughness: 0.3, envMap: planetEnv });
+  const coinFaceMat = new THREE.MeshPhysicalMaterial({
+    color: new THREE.Color(1.0, 0.74, 0.32), metalness: 1, roughness: 0.26, envMap: planetEnv,
+    map: struck.color, normalMap: struck.normal, normalScale: new THREE.Vector2(0.85, 0.85),
+  });
+  // No single glint may flare the bloom for a frame: cap each pixel's brightness.
+  for (const m of [coinSide, coinFaceMat, blank.faceMat, blank.sideMat]) {
+    m.onBeforeCompile = (sh) => {
+      sh.fragmentShader = sh.fragmentShader.replace('#include <opaque_fragment>', 'outgoingLight = min(outgoingLight, vec3(2.2));\n#include <opaque_fragment>');
+    };
+    m.customProgramCacheKey = () => 'verse1-capped';
+  }
+  const coins = new THREE.InstancedMesh(coinGeo, [coinSide, coinFaceMat, coinFaceMat], NC);
   coins.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   coins.frustumCulled = false;
   planet.add(coins);
-  const halo = new THREE.Sprite(new THREE.SpriteMaterial({
+  // The glow sits on a plane well behind the blank (the camera looks down -Z in this shot): a glow plane
+  // through the coin itself would light the half of the tilted coin behind it and leave a hard line.
+  const halo = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({
     map: (() => { const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d'); const gr = g.createRadialGradient(128, 128, 0, 128, 128, 128); gr.addColorStop(0, 'rgba(255,190,110,0.5)'); gr.addColorStop(0.4, 'rgba(255,150,60,0.15)'); gr.addColorStop(1, 'rgba(255,120,40,0)'); g.fillStyle = gr; g.fillRect(0, 0, 256, 256); return new THREE.CanvasTexture(c); })(),
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
   }));
+  halo.position.set(0, 0, -3.2);
   planet.add(halo);
-  const planetKey = new THREE.DirectionalLight(0xffe6c0, 1.2);
+  const planetKey = new THREE.DirectionalLight(0xffe6c0, 1.6);
   planetKey.position.set(-4, 3, 5);
   planet.add(planetKey);
 
@@ -232,18 +375,21 @@ export async function forgeStage(film) {
       let n = 0;
       const tilt = 0.32, cT = Math.cos(tilt), sT = Math.sin(tilt);
       for (let i = 0; i < NC; i++) {
-        const delay = hash1(i * 7 + 1) * 0.5;
-        const a = clamp((k - delay) / (1 - delay));
+        // Coins emerge out of the dark: each grows in while drifting gently inward to its orbit, so a patch of
+        // screen brightens once, gradually, instead of flashing as a coin streaks across it.
+        const delay = hash1(i * 7 + 1) * 0.35;
+        const a = clamp((k - delay) / 0.62);
         if (a <= 0) continue;
-        const e = easeOut(a, 2.6);
+        const e = smooth(a);
         const R0 = 2.3 + hash1(i * 7 + 2) * 1.1;
-        const Rs = R0 + (1 - e) * (3.5 + hash1(i * 7 + 8) * 3);
-        const ph = hash1(i * 7 + 3) * Math.PI * 2 + t * 1.3 / Math.sqrt(R0 / 2.3) - (1 - e) * 3.2;
-        const yOff = (hash1(i * 7 + 4) - 0.5) * 0.25 + (1 - e) * (hash1(i * 7 + 6) - 0.5) * 3;
+        const Rs = R0 + (1 - e) * (0.9 + hash1(i * 7 + 8) * 0.6);
+        const ph = hash1(i * 7 + 3) * Math.PI * 2 + t * 0.55 / Math.sqrt(R0 / 2.3) - (1 - e) * 0.35; // a slow, stately orbit
+        const yOff = (hash1(i * 7 + 4) - 0.5) * 0.25 + (1 - e) * (hash1(i * 7 + 6) - 0.5) * 0.6;
         const ox = Math.cos(ph) * Rs, oz = Math.sin(ph) * Rs;
+        const grow = smooth(a * 1.6);
         dummy.position.set(ox, yOff * cT - oz * sT, yOff * sT + oz * cT);
-        dummy.rotation.set(t * (1.5 + hash1(i) * 3) + i, t * 0.8 + i * 0.3, 0.5);
-        dummy.scale.setScalar(0.16 + hash1(i * 7 + 9) * 0.06);
+        dummy.rotation.set(t * (0.25 + hash1(i) * 0.45) + i, t * 0.2 + i * 0.3, 0.5);
+        dummy.scale.setScalar((0.2 + hash1(i * 7 + 9) * 0.08) * grow);
         dummy.updateMatrix();
         coins.setMatrixAt(n++, dummy.matrix);
       }
@@ -258,7 +404,7 @@ export async function forgeStage(film) {
       crucible.rotation.set(0, 0, -1.25);
       blank.position.set(0, 0, 0);
       blank.rotation.set(0, 0, 0);
-      halo.scale.setScalar(3.6);
+      halo.scale.setScalar(6.8);
       coins.count = 0;
     },
   };

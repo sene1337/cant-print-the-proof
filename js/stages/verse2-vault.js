@@ -176,7 +176,10 @@ export async function vaultStage(film) {
   const coins = [];
   for (let i = 0; i < NCOIN; i++) {
     const c = new Coin({ radius: COIN_R, thickness: 0.075, face: eagle, back: eagle, metal: 'gold', edge, seed: 90 + i });
-    for (const m of [c.faceMat, c.sideMat, c.backMat, c.band?.material]) if (m) clampHot(m, 5);
+    // softer metal and capped glints: the rolling faces must not strobe
+    for (const m of [c.faceMat, c.sideMat, c.backMat, c.band?.material]) if (m) { clampHot(m, 2.2); m.roughness = Math.max(m.roughness, 0.34); }
+    c.setRelief(0.7);
+    if (c.backMat) c.backMat.normalScale.set(0.7, 0.7);
     scene.add(c);
     coins.push(c);
   }
@@ -191,8 +194,8 @@ export async function vaultStage(film) {
   }
   scene.add(cell);
 
-  const NP = 260;
-  const puff = new SoftPoints(NP, { color: [0.36, 0.36, 0.37], opacity: 0.3 });
+  const NP = 700;
+  const puff = new SoftPoints(NP, { color: [0.62, 0.62, 0.63], opacity: 0.9 });
   scene.add(puff);
   const dust = new Dust({ count: 600, size: 0.012, box: [8, 5, 8], color: [0.85, 0.9, 1], gain: 0.6 });
   dust.position.set(0, 2.5, 2.5);
@@ -217,25 +220,32 @@ export async function vaultStage(film) {
         const dist = Math.max(0, (t - t0) * speed);
         const z = z0 - dist + i * gap;
         c.visible = z > -3.2;
-        const wob = Math.sin(t * 7 + i) * 0.035;
+        const wob = Math.sin(t * 3.5 + i) * 0.03;
         c.position.set(0.05 * Math.sin(i * 1.7), COIN_R + 0.004, z);
         c.rotation.set(wob, Math.PI / 2, (z - z0) / COIN_R);
       });
     },
 
+    // The slam pushes air out of the seam: a fine spray of dust blows outward and forward from the door's edge,
+    // mostly along the bottom where it settles, gone in half a second.
     slamDust(t, tHit) {
       const dt = t - tHit;
-      puff.visible = dt > 0 && dt < 1.6;
+      puff.visible = dt > 0 && dt < 0.7;
       if (!puff.visible) return;
       puff.layout(NP, (i, o) => {
         const h = (q) => hash1(i * 11 + q);
-        const a = h(1) * Math.PI * 2;
-        const r = DOOR.R + 0.05 + (1 - Math.exp(-dt * 4)) * (0.2 + h(2) * 0.6);
+        // seam position, weighted toward the lower half of the door
+        const a = -Math.PI / 2 + (h(1) - 0.5) * Math.PI * (h(2) < 0.7 ? 1.1 : 2);
+        const life = 0.25 + h(3) * 0.35;
+        if (dt > life) return false;
+        const sp = 0.8 + h(4) * 1.6;
+        const out = sp * (1 - Math.exp(-dt * 7)) / 7;
+        const r = DOOR.R + 0.02 + out;
         o.x = Math.cos(a) * r;
-        o.y = DOOR.cy + Math.sin(a) * r;
-        o.z = DOOR.z + 0.4 + (1 - Math.exp(-dt * 3)) * (0.2 + h(3) * 0.8);
-        o.size = 0.3 + h(4) * 0.35 + dt * 0.5;
-        o.alpha = clamp(1 - dt / (0.8 + h(5) * 0.7)) * 0.55 * (o.y > 0.05 ? 1 : 0);
+        o.y = Math.max(0.01, DOOR.cy + Math.sin(a) * r - 0.9 * dt * dt);
+        o.z = DOOR.z + 0.34 + out * (0.6 + h(5) * 0.8);
+        o.size = 0.012 + h(6) * 0.02;
+        o.alpha = (1 - dt / life) * (0.25 + 0.45 * h(7));
       }, pointScale(film, film.camera));
     },
 

@@ -1,5 +1,8 @@
 // The headline (116.96-121.82): the genesis-block front page spins in out of the dark like an old movie insert,
-// stops square to camera, and then a warm orange light rises behind it and shines through the paper.
+// stops square to camera; a warm orange light rises behind it and shines through the paper; then the page falls back
+// into the dark, uncovering the light, and the frame goes to black for verse 3.
+// Flash safety: about a third of a turn with motion blur, a single overshoot (no wobble), and softer column rows so no
+// stripes strobe.
 import * as THREE from 'three';
 import { newspaper, normalFromHeight } from '../tex.js';
 import { clamp, hash1, lerp, rng, smooth, easeOut, easeInOut } from '../util.js';
@@ -53,8 +56,18 @@ export async function newsStage(film) {
   fill.position.set(4, -1, 6);
   scene.add(fill);
 
-  const tex = newspaper();
-  const U = { uGlowR: { value: 0.35 }, uGlowC: { value: new THREE.Vector2(0.5, 0.69) } };
+  // The shared front page, with the greeked column rows softened (the headline and date stay crisp).
+  const src = newspaper();
+  const pc = canvas(src.image.width, src.image.height), pg = pc.getContext('2d');
+  pg.drawImage(src.image, 0, 0);
+  pg.fillStyle = 'rgba(236,230,214,0.55)';
+  pg.fillRect(0, 585, pc.width, pc.height - 585);
+  const tex = new THREE.CanvasTexture(pc);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  // uMapBias: motion blur for the spin (sample the print from a softer mip level while the page turns fast).
+  const U = { uGlowR: { value: 0.35 }, uGlowC: { value: new THREE.Vector2(0.5, 0.69) }, uMapBias: { value: 0 } };
+  const MAP_BLUR = THREE.ShaderChunk.map_fragment.replace('texture2D( map, vMapUv )', 'texture2D( map, vMapUv, uMapBias )');
   const mat = new THREE.MeshStandardMaterial({
     map: tex, normalMap: paperNormal(), normalScale: new THREE.Vector2(0.35, 0.35), roughness: 0.88, metalness: 0,
     emissive: new THREE.Color(...GLOW), emissiveMap: tex, emissiveIntensity: 0,
@@ -64,7 +77,8 @@ export async function newsStage(film) {
     Object.assign(sh.uniforms, U);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
-        uniform float uGlowR; uniform vec2 uGlowC;`)
+        uniform float uGlowR, uMapBias; uniform vec2 uGlowC;`)
+      .replace('#include <map_fragment>', MAP_BLUR)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         {
           vec2 d = (vEmissiveMapUv - uGlowC) * vec2(1.4, 1.0);
@@ -76,7 +90,8 @@ export async function newsStage(film) {
           totalEmissiveRadiance = emissive * paper * fall * (0.25 + 0.75 * fall);
         }`);
   };
-  mat.customProgramCacheKey = () => 'bridge-news-backlit';
+  mat.customProgramCacheKey = () => 'bridge-news-backlit-blur';
+  if (!MAP_BLUR.includes('uMapBias')) console.warn('bridge-news: map chunk changed; the spin will not blur');
   const geo = new THREE.PlaneGeometry(NEWS.W, NEWS.H, 70, 50);
   const p = geo.attributes.position;
   for (let i = 0; i < p.count; i++) {
@@ -94,20 +109,28 @@ export async function newsStage(film) {
   const halo = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({
     map: glowSprite(), color: new THREE.Color(...ORANGE), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
   }));
-  halo.position.z = -0.6;
-  holder.add(halo);
+  halo.position.z = -0.7;
+  scene.add(halo); // fixed behind the page, so when the page tips back the light behind it is revealed
 
   const S = {
     scene, key, fill, paper, holder, halo, mat, U,
     fx: { bloom: 0.5, threshold: 1.0, bloomRadius: 0.5, grain: 0.06, vignette: 0.6, tint: [1.02, 1.0, 0.96], sat: 0.95, contrast: 1.08 },
-    // Old-movie insert: spins out of the dark and slams square at tStop.
-    spinIn(t, t0, tStop, turns = 1.5, zFrom = -46) {
+    // Old-movie insert: spins out of the dark and slams square at tStop, with one small overshoot that settles.
+    spinIn(t, t0, tStop, turns = 0.36, zFrom = -9) {
       const u = clamp((t - t0) / (tStop - t0));
-      const e = easeOut(u, 2.2);
+      const e = easeOut(u, 2.6);
+      // motion blur follows the turning speed: soft while it whips round, sharp as it slams square
+      const omega = (turns * Math.PI * 2 * 2.6 * Math.pow(1 - u, 1.6)) / (tStop - t0);
+      U.uMapBias.value = u < 1 ? Math.min(3, omega * 0.3) : 0;
       const after = Math.max(0, t - tStop);
-      const settle = after > 0 ? Math.exp(-after * 9) * Math.sin(after * 30) * 0.035 : 0;
+      const settle = after > 0 ? -0.03 * Math.sin(Math.min(after / 0.25, 1) * Math.PI) * Math.exp(-after * 3) : 0;
       holder.rotation.set(0, 0, (1 - e) * turns * Math.PI * 2 + settle);
       holder.position.set(0, 0, lerp(zFrom, 0, e));
+    },
+    // The page falls back like a board hinged at its bottom edge (theta in radians, 0 = upright).
+    tipBack(theta) {
+      holder.rotation.set(-theta, 0, 0);
+      holder.position.set(0, -NEWS.H / 2 + (NEWS.H / 2) * Math.cos(theta), -(NEWS.H / 2) * Math.sin(theta));
     },
     // Backlight: glow gain k (0..), radius in page units.
     backlight(k, r = 0.35) {
@@ -124,6 +147,7 @@ export async function newsStage(film) {
       holder.visible = true;
       key.intensity = 70;
       fill.intensity = 0.25;
+      U.uMapBias.value = 0;
       this.backlight(0);
     },
   };

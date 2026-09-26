@@ -2,6 +2,7 @@
 // Each landed block shows the real art-chain block being mined at the moment it lands.
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { studioEnv } from '../film.js';
 import { blockFace, normalFromHeight } from '../tex.js';
 import { canvas, canvasTex, Motes, glowCard, fmt } from '../props/verse3-kit.js';
@@ -9,122 +10,173 @@ import { clamp, lerp, hash1, rng, smooth, easeOut, easeIn, easeInOut } from '../
 
 export const SP = 2.1;        // block spacing along x
 
-// 2D value noise and fBm, seeded, for the rock face.
-function vn2(x, y, seed) {
-  const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
-  const h = (i, j) => hash1(Math.imul(i, 73856093) ^ Math.imul(j, 19349663) ^ Math.imul(seed, 83492791));
-  const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
-  return lerp(lerp(h(xi, yi), h(xi + 1, yi), u), lerp(h(xi, yi + 1), h(xi + 1, yi + 1), u), v);
-}
-function fbm2(x, y, seed, oct = 5) {
-  let s = 0, a = 0.5, f = 1;
-  for (let i = 0; i < oct; i++) { s += a * vn2(x * f, y * f, seed + i * 17); f *= 2.03; a *= 0.5; }
-  return s;
-}
 const NVIS = 34;              // blocks drawn behind the head
 const FACE_PX = 320;
 const UNIQUE_FROM = 136.3; // blocks landing earlier are far down the chain: one shared face
 
-// Granite: grey ground, black mica, white quartz and a little pink feldspar; plus a matching height map.
-function graniteMaps(seed = 3, S = 1024) {
+// ---------------------------------------------------------------------------------------------
+// Granite, as a mineral mosaic: interlocking crystals (feldspar as elongated laths, smoky quartz, dark
+// hornblende/biotite), then small black mica flakes. The tile is seamless. Colours are sRGB 0-255.
+const PAL_WALL = { // light grey granite, honed (contrast kept moderate so the grain doesn't shimmer in motion)
+  feld: [[198, 194, 186], [188, 166, 156]], pink: 0.14, quartz: [148, 148, 153], dark: [74, 72, 74], mica: [42, 40, 42],
+  p: [0.60, 0.28, 0.12], micaN: 2400,
+};
+const PAL_PANEL = { // dark granite, polished: grey crystals in near-black
+  feld: [[76, 75, 73], [66, 70, 78]], pink: 0.4, quartz: [50, 50, 54], dark: [26, 25, 26], mica: [15, 15, 16],
+  p: [0.40, 0.25, 0.35], micaN: 1800,
+};
+function graniteCanvas({ S = 1024, cell = 26, seed = 3, pal }) {
   const R = rng(seed);
-  const col = canvas(S, S), cg = col.getContext('2d');
-  const hgt = canvas(S, S), hg = hgt.getContext('2d');
-  cg.fillStyle = '#6a6866'; cg.fillRect(0, 0, S, S);
-  hg.fillStyle = '#808080'; hg.fillRect(0, 0, S, S);
-  const blob = (g, x, y, r, fill) => {
-    g.fillStyle = fill; g.beginPath();
-    const n = 7;
-    for (let i = 0; i <= n; i++) {
-      const a = (i / n) * Math.PI * 2, rr = r * (0.6 + R() * 0.7);
-      const px = x + Math.cos(a) * rr, py = y + Math.sin(a) * rr;
-      i ? g.lineTo(px, py) : g.moveTo(px, py);
-    }
-    g.fill();
-  };
-  // wrap-around so the tile repeats seamlessly
-  const each = (count, rmin, rmax, colFn, hFn) => {
-    for (let i = 0; i < count; i++) {
-      const x = R() * S, y = R() * S, r = rmin + R() * (rmax - rmin);
-      const c = colFn(), h = hFn();
-      for (const dx of [-S, 0, S]) for (const dy of [-S, 0, S]) {
-        if (x + dx < -r * 2 || x + dx > S + r * 2 || y + dy < -r * 2 || y + dy > S + r * 2) continue;
-        blob(cg, x + dx, y + dy, r, c); blob(hg, x + dx, y + dy, r, h);
+  const n = Math.max(4, Math.round(S / cell)), cs = S / n, N2 = n * n;
+  const sx = new Float32Array(N2), sy = new Float32Array(N2), ca = new Float32Array(N2), sa = new Float32Array(N2);
+  const el = new Float32Array(N2), cr = new Float32Array(N2), cg = new Float32Array(N2), cb = new Float32Array(N2);
+  const wt = new Float32Array(N2); // > 1 shrinks a crystal: quartz a little, the dark minerals a lot
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+    const k = j * n + i;
+    sx[k] = (i + 0.1 + 0.8 * R()) * cs; sy[k] = (j + 0.1 + 0.8 * R()) * cs;
+    const a = R() * Math.PI; ca[k] = Math.cos(a); sa[k] = Math.sin(a);
+    const u = R();
+    let col;
+    if (u < pal.p[0]) { col = pal.feld[R() < pal.pink ? 1 : 0]; el[k] = 1.3 + R() * 0.8; wt[k] = 1; }
+    else if (u < pal.p[0] + pal.p[1]) { col = pal.quartz; el[k] = 1 + R() * 0.3; wt[k] = 1.35; }
+    else { col = pal.dark; el[k] = 1 + R() * 0.5; wt[k] = 2.4; }
+    const v = 0.9 + R() * 0.2;
+    cr[k] = col[0] * v; cg[k] = col[1] * v; cb[k] = col[2] * v;
+  }
+  const c = canvas(S, S), g = c.getContext('2d');
+  const img = g.createImageData(S, S), d = img.data;
+  for (let y = 0; y < S; y++) {
+    const gj = Math.floor(y / cs);
+    for (let x = 0; x < S; x++) {
+      const gi = Math.floor(x / cs);
+      let b1 = 1e12, b2 = 1e12, k1 = 0;
+      for (let dj = -2; dj <= 2; dj++) {
+        let jj = gj + dj, oy = 0;
+        if (jj < 0) { jj += n; oy = -S; } else if (jj >= n) { jj -= n; oy = S; }
+        for (let di = -2; di <= 2; di++) {
+          let ii = gi + di, ox = 0;
+          if (ii < 0) { ii += n; ox = -S; } else if (ii >= n) { ii -= n; ox = S; }
+          const k = jj * n + ii;
+          const dx = x - sx[k] - ox, dy = y - sy[k] - oy;
+          const pu = dx * ca[k] + dy * sa[k], pv = dy * ca[k] - dx * sa[k];
+          const dd = ((pu * pu) / (el[k] * el[k]) + pv * pv) * wt[k]; // stretched along the crystal's long axis
+          if (dd < b1) { b2 = b1; b1 = dd; k1 = k; } else if (dd < b2) b2 = dd;
+        }
       }
+      const edge = Math.sqrt(b2) - Math.sqrt(b1);
+      const e = edge < 1.5 ? 0.82 + 0.18 * (edge / 1.5) : 1; // a fine darker line where crystals meet
+      const i4 = (y * S + x) * 4;
+      d[i4] = cr[k1] * e; d[i4 + 1] = cg[k1] * e; d[i4 + 2] = cb[k1] * e; d[i4 + 3] = 255;
     }
-  };
-  // broad mottling first, then the crystals
-  for (let i = 0; i < 90; i++) { const x = R() * S, y = R() * S, r = 40 + R() * 120; const gd = cg.createRadialGradient(x, y, 0, x, y, r); const v = R() < 0.5 ? '255,255,255' : '0,0,0'; gd.addColorStop(0, `rgba(${v},0.06)`); gd.addColorStop(1, `rgba(${v},0)`); cg.fillStyle = gd; cg.fillRect(x - r, y - r, r * 2, r * 2); }
-  each(5200, 1.5, 5, () => `rgba(${140 + R() * 35},${122 + R() * 25},${118 + R() * 25},${0.3 + R() * 0.3})`, () => `rgba(140,140,140,0.5)`); // feldspar
-  each(6500, 1.2, 4, () => `rgba(${195 + R() * 45},${195 + R() * 45},${195 + R() * 45},${0.4 + R() * 0.4})`, () => `rgba(170,170,170,0.6)`); // quartz
-  each(8000, 1, 3.5, () => `rgba(${12 + R() * 25},${12 + R() * 22},${14 + R() * 20},${0.55 + R() * 0.4})`, () => `rgba(70,70,70,0.7)`); // mica
-  for (let i = 0; i < 40000; i++) { cg.fillStyle = `rgba(0,0,0,${R() * 0.12})`; cg.fillRect(R() * S, R() * S, 1.5, 1.5); }
-  const map = canvasTex(col, { repeat: true, aniso: 16 });
-  const normal = normalFromHeight(hgt, 1.6, 1.2);
-  normal.wrapS = normal.wrapT = THREE.RepeatWrapping;
-  // A calm version for surfaces seen at grazing angles: softened crystals, lower contrast,
-  // a gentle normal map, so the stone doesn't shimmer as the camera moves.
-  const calmC = canvas(S, S), kg = calmC.getContext('2d');
-  kg.filter = 'blur(1.6px)'; kg.drawImage(col, 0, 0); kg.filter = 'none';
-  kg.fillStyle = 'rgba(104,102,99,0.42)'; kg.fillRect(0, 0, S, S);
-  const calmMap = canvasTex(calmC, { repeat: true, aniso: 16 });
-  const calmNormal = normalFromHeight(hgt, 0.7, 3.5);
-  calmNormal.wrapS = calmNormal.wrapT = THREE.RepeatWrapping;
-  // Hewn rock: overlapping angular chips and a few cracks, plus the crystal grain, as one normal map.
-  // Detail lives in the texture, so the cliff mesh can be smooth and never show its triangles.
-  const rk = canvas(S, S), rg = rk.getContext('2d');
-  rg.fillStyle = '#808080'; rg.fillRect(0, 0, S, S);
-  const chip = (x, y, r, v) => {
-    const n = 4 + Math.floor(R() * 3), a0 = R() * Math.PI;
-    const gd = rg.createLinearGradient(x - r, y - r, x + r, y + r);
-    gd.addColorStop(0, `rgb(${v + 22},${v + 22},${v + 22})`); gd.addColorStop(1, `rgb(${v - 22},${v - 22},${v - 22})`);
-    rg.fillStyle = gd;
-    for (const dx of [-S, 0, S]) for (const dy of [-S, 0, S]) {
-      rg.beginPath();
-      for (let i = 0; i <= n; i++) {
-        const a = a0 + (i / n) * Math.PI * 2 + (R() - 0.5) * 0.5, rr = r * (0.7 + R() * 0.5);
-        const px = x + dx + Math.cos(a) * rr, py = y + dy + Math.sin(a) * rr;
-        i ? rg.lineTo(px, py) : rg.moveTo(px, py);
-      }
-      rg.fill();
-    }
-  };
-  for (let i = 0; i < 160; i++) chip(R() * S, R() * S, 70 + R() * 190, 90 + Math.floor(R() * 80));
-  for (let i = 0; i < 160; i++) chip(R() * S, R() * S, 25 + R() * 50, 100 + Math.floor(R() * 60));
-  rg.globalAlpha = 0.25; rg.drawImage(hgt, 0, 0); rg.globalAlpha = 1;
-  const rockNormal = normalFromHeight(rk, 1.7, 1.2);
-  rockNormal.wrapS = rockNormal.wrapT = THREE.RepeatWrapping;
-  return { map, normal, calmMap, calmNormal, rockNormal };
+  }
+  g.putImageData(img, 0, 0);
+  const wrap = (fn) => { for (const dx of [-S, 0, S]) for (const dy of [-S, 0, S]) fn(dx, dy); };
+  // soft variation inside the crystals, so none reads as flat paint
+  for (let i = 0; i < 420; i++) {
+    const x = R() * S, y = R() * S, r = cs * (0.4 + R() * 0.9), v = R() < 0.5 ? '255,255,255' : '0,0,0', a = 0.05 + R() * 0.07;
+    wrap((dx, dy) => {
+      const gd = g.createRadialGradient(x + dx, y + dy, 0, x + dx, y + dy, r);
+      gd.addColorStop(0, `rgba(${v},${a})`); gd.addColorStop(1, `rgba(${v},0)`);
+      g.fillStyle = gd; g.fillRect(x + dx - r, y + dy - r, 2 * r, 2 * r);
+    });
+  }
+  // mica: small black flakes, a few with a bronze edge
+  for (let i = 0; i < pal.micaN; i++) {
+    const x = R() * S, y = R() * S, l = 1.5 + R() * 3.2, w = 0.7 + R() * 1.3, a = R() * Math.PI;
+    const m = pal.mica, bronze = R() < 0.2;
+    g.fillStyle = bronze ? `rgb(${m[0] + 40},${m[1] + 28},${m[2] + 12})` : `rgb(${m[0]},${m[1]},${m[2]})`;
+    wrap((dx, dy) => { g.beginPath(); g.ellipse(x + dx, y + dy, l, w, a, 0, Math.PI * 2); g.fill(); });
+  }
+  // a hair of blur to anti-alias the crystal edges, done on a wrapped copy so the tile stays seamless
+  const M = 8, big = canvas(S + 2 * M, S + 2 * M), bg = big.getContext('2d');
+  wrap((dx, dy) => bg.drawImage(c, M + dx, M + dy));
+  const out = canvas(S, S), og = out.getContext('2d');
+  og.filter = 'blur(0.55px)';
+  og.drawImage(big, -M, -M);
+  return out;
 }
 
-// Carved inscription on a dressed (polished) granite panel: albedo with dark V-cut letters, plus a height map.
-function inscription(text, gr, w = 2048, h = 600) {
+// Exact Euclidean distance transform (Felzenszwalb): for each inside pixel, the distance to the nearest outside pixel.
+function distanceInside(inside, w, h) {
+  const INF = 1e12, L = Math.max(w, h);
+  const f = new Float64Array(L), dd = new Float64Array(L), v = new Int32Array(L), z = new Float64Array(L + 1);
+  const grid = new Float64Array(w * h);
+  for (let i = 0; i < w * h; i++) grid[i] = inside[i] ? INF : 0;
+  const pass = (n) => {
+    let k = 0; v[0] = 0; z[0] = -INF; z[1] = INF;
+    for (let q = 1; q < n; q++) {
+      let s = ((f[q] + q * q) - (f[v[k]] + v[k] * v[k])) / (2 * q - 2 * v[k]);
+      while (s <= z[k]) { k--; s = ((f[q] + q * q) - (f[v[k]] + v[k] * v[k])) / (2 * q - 2 * v[k]); }
+      k++; v[k] = q; z[k] = s; z[k + 1] = INF;
+    }
+    k = 0;
+    for (let q = 0; q < n; q++) { while (z[k + 1] < q) k++; dd[q] = (q - v[k]) * (q - v[k]) + f[v[k]]; }
+  };
+  for (let x = 0; x < w; x++) { for (let y = 0; y < h; y++) f[y] = grid[y * w + x]; pass(h); for (let y = 0; y < h; y++) grid[y * w + x] = dd[y]; }
+  for (let y = 0; y < h; y++) { for (let x = 0; x < w; x++) f[x] = grid[y * w + x]; pass(w); for (let x = 0; x < w; x++) grid[y * w + x] = Math.sqrt(dd[x]); }
+  return grid;
+}
+
+// The carved face of the monolith: polished dark granite with the rule cut in as V-grooves (45-degree walls meeting
+// in a sharp centre line, the classic chisel cut), the cut surfaces frosted pale. Returns colour, normal and roughness.
+function inscriptionMaps(text, darkTile, pxPerUnit, w = 2048, h = 600) {
+  // polished ground: the dark granite at its true scale
   const col = canvas(w, h), cg = col.getContext('2d');
-  const hgt = canvas(w, h), hg = hgt.getContext('2d');
-  // polished granite ground: the same stone, a shade darker, with a chiselled border
-  const src = gr.map.image;
-  for (let x = 0; x < w; x += src.width / 2) for (let y = 0; y < h; y += src.height / 2) cg.drawImage(src, x, y, src.width / 2, src.height / 2);
-  cg.fillStyle = 'rgba(0,0,0,0.32)'; cg.fillRect(0, 0, w, h);
-  hg.fillStyle = '#ffffff'; hg.fillRect(0, 0, w, h);
-  // border: a sunk line all round
-  hg.strokeStyle = 'rgba(0,0,0,0.8)'; hg.lineWidth = 10; hg.strokeRect(28, 28, w - 56, h - 56);
-  cg.strokeStyle = 'rgba(0,0,0,0.45)'; cg.lineWidth = 8; cg.strokeRect(28, 28, w - 56, h - 56);
-  const font = `700 ${Math.round(h * 0.6)}px "Cormorant Garamond"`;
-  for (const g of [cg, hg]) { g.font = font; g.textAlign = 'center'; g.textBaseline = 'middle'; }
-  for (let k = 0; k < 7; k++) {
-    hg.filter = `blur(${(7 - k) * 2.4}px)`;
-    hg.fillStyle = 'rgba(0,0,0,0.3)';
-    hg.fillText(text, w / 2, h * 0.55);
+  const tpx = Math.round(1.6 * pxPerUnit); // one granite tile is 1.6 world units
+  for (let x = 0; x < w; x += tpx) for (let y = 0; y < h; y += tpx) cg.drawImage(darkTile, x, y, tpx, tpx);
+  const ground = cg.getImageData(0, 0, w, h);
+  // the cut: letters and an incised border line
+  const mk = canvas(w, h), mg = mk.getContext('2d');
+  mg.fillStyle = '#000'; mg.fillRect(0, 0, w, h);
+  mg.fillStyle = '#fff'; mg.strokeStyle = '#fff';
+  mg.font = `700 ${Math.round(h * 0.62)}px "Cormorant Garamond"`; mg.textAlign = 'center'; mg.textBaseline = 'middle';
+  mg.fillText(text, w / 2, h * 0.56);
+  mg.lineWidth = 11; mg.strokeRect(46, 46, w - 92, h - 92);
+  const md = mg.getImageData(0, 0, w, h).data;
+  const cover = new Float32Array(w * h), inside = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) { cover[i] = md[i * 4] / 255; inside[i] = cover[i] >= 0.5 ? 1 : 0; }
+  const dist = distanceInside(inside, w, h);
+  // colour: frosted cut (pale, the crystals faintly visible) over polished dark granite
+  const out = cg.createImageData(w, h), od = out.data, gd = ground.data;
+  // normal: height = -distance (a V with 45-degree walls); roughness: polished 0.12, frosted 0.85
+  const nC = canvas(w, h), ng = nC.getContext('2d'), nImg = ng.createImageData(w, h), nd = nImg.data;
+  const rC = canvas(w, h), rgx = rC.getContext('2d'), rImg = rgx.createImageData(w, h), rd = rImg.data;
+  const H = (x, y) => -dist[Math.min(h - 1, Math.max(0, y)) * w + Math.min(w - 1, Math.max(0, x))];
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x, i4 = i * 4, c = cover[i];
+      for (let k = 0; k < 3; k++) {
+        const base = gd[i4 + k];
+        const frost = 142 + (base - 50) * 0.55;
+        od[i4 + k] = base + (frost - base) * c;
+      }
+      od[i4 + 3] = 255;
+      const dx = (H(x + 1, y) - H(x - 1, y)) * 0.5, dy = (H(x, y + 1) - H(x, y - 1)) * 0.5;
+      let nx = -dx, ny = dy, nz = 1;
+      const l = Math.hypot(nx, ny, nz); nx /= l; ny /= l; nz /= l;
+      nd[i4] = (nx * 0.5 + 0.5) * 255; nd[i4 + 1] = (ny * 0.5 + 0.5) * 255; nd[i4 + 2] = (nz * 0.5 + 0.5) * 255; nd[i4 + 3] = 255;
+      const r = 0.12 + (0.85 - 0.12) * c;
+      rd[i4] = rd[i4 + 1] = rd[i4 + 2] = r * 255; rd[i4 + 3] = 255;
+    }
   }
-  hg.filter = 'none';
-  // the groove floor in shadow, a pale fresh-cut rim on its upper edge
-  cg.fillStyle = 'rgba(210,205,196,0.55)';
-  cg.fillText(text, w / 2, h * 0.55 - 5);
-  cg.fillStyle = 'rgba(6,5,5,0.9)';
-  cg.fillText(text, w / 2, h * 0.55 + 3);
-  const map = canvasTex(col, { aniso: 16 });
-  const normal = normalFromHeight(hgt, 3.0, 1.5);
-  return { map, normal };
+  cg.putImageData(out, 0, 0); ng.putImageData(nImg, 0, 0); rgx.putImageData(rImg, 0, 0);
+  return { map: canvasTex(col, { aniso: 16 }), normal: canvasTex(nC, { srgb: false, aniso: 16 }), rough: canvasTex(rC, { srgb: false, aniso: 16 }) };
+}
+
+// Planar UVs chosen per vertex by its normal (a box of any size gets undistorted granite on every face),
+// in world units, shifted per stone so neighbours never line up; plus a per-stone tone as vertex colour.
+function dressStone(geo, tile, ox, oy, tone) {
+  const p = geo.attributes.position, nrm = geo.attributes.normal, uv = geo.attributes.uv;
+  const col = new Float32Array(p.count * 3);
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i), ax = Math.abs(nrm.getX(i)), ay = Math.abs(nrm.getY(i));
+    if (ay > 0.7) uv.setXY(i, (x + ox) / tile, (z + oy) / tile);
+    else if (ax > 0.7) uv.setXY(i, (z + ox) / tile, (y + oy) / tile);
+    else uv.setXY(i, (x + ox) / tile, (y + oy) / tile);
+    col[i * 3] = tone[0]; col[i * 3 + 1] = tone[1]; col[i * 3 + 2] = tone[2];
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  return geo;
 }
 
 // Churning digits for the block being mined next.
@@ -175,6 +227,7 @@ export async function verse3ChainStage(film) {
     });
     const m = new THREE.Mesh(geo, mat);
     m.castShadow = true;
+    m.receiveShadow = true;
     scene.add(m);
     return { m, mat, t: b, i, k };
   });
@@ -195,98 +248,102 @@ export async function verse3ChainStage(film) {
   const mineEdge = new THREE.LineSegments(edgeGeo, new THREE.LineBasicMaterial({ color: new THREE.Color(1, 0.5, 0.1).multiplyScalar(1.5), transparent: true, opacity: 0.5 }));
   mining.add(mineEdge);
 
-  // Granite bedrock: a quarried top the chain sits on, and a rough cliff face that drops into the dark.
-  const gr = graniteMaps(3);
-  const graniteMat = (rx, ry, rough = 0.62, flat = false, calm = false, rock = false) => {
-    const map = (calm ? gr.calmMap : gr.map).clone(); map.repeat.set(rx, ry); map.needsUpdate = true;
-    const nm = (rock ? gr.rockNormal : calm ? gr.calmNormal : gr.normal).clone(); nm.repeat.set(rx, ry); nm.needsUpdate = true;
-    const k = rock ? 1.1 : calm ? 0.8 : 1.0;
-    return new THREE.MeshStandardMaterial({ map, normalMap: nm, normalScale: new THREE.Vector2(k, k), roughness: rough, metalness: 0, flatShading: flat });
-  };
+  // ---- The bedrock, dressed: honed granite ashlar under a projecting coping; one polished dark monolith carries the rule.
+  const TILE_W = 1.6; // one granite tile spans 1.6 world units: feldspar laths 2.5-4 cm, dark minerals ~1 cm, mica 3-8 mm
+  const wallTile = graniteCanvas({ S: 1024, cell: 16, seed: 3, pal: PAL_WALL });
+  const darkTile = graniteCanvas({ S: 1024, cell: 16, seed: 8, pal: PAL_PANEL });
+  const wallTex = canvasTex(wallTile, { repeat: true, aniso: 16 });
+  const honed = new THREE.MeshStandardMaterial({ map: wallTex, vertexColors: true, roughness: 0.5, metalness: 0, envMapIntensity: 0.5 });
   const L = 300, X0 = -200;
-  const FRONT_Z = 1.3, DEPTH = 40;
+  const FRONT_Z = 1.3;
   const tGranite = T.wordAfter('granite', 150).s;
-  const XG = xOf(beats.filter((b) => b <= tGranite).length - 1) - 1.4; // where the carved panel sits
+  const XG = xOf(beats.filter((b) => b <= tGranite).length - 1) - 1.4; // where the carved monolith sits
   const PANEL = { x: XG, y: -3.3, w: 9.2, h: 2.7 };
-  const TILE = 3.4;
-  const TOP_TILE = 5.5; // the ledge is seen edge-on: a larger, calmer grain
-  const top = new THREE.Mesh(new THREE.PlaneGeometry(L, 6), graniteMat(L / TOP_TILE, 6 / TOP_TILE, 0.6, false, true));
+  const R = rng(41);
+  const stones = [];
+  const GAP = 0.022, BEVEL = 0.03;
+  const stone = (x0, x1, yTop, hgt, depth, zFront, bevel = BEVEL) => {
+    const w = x1 - x0;
+    const g = new RoundedBoxGeometry(w - GAP, hgt - GAP, depth, 1, bevel);
+    g.translate((x0 + x1) / 2, yTop - hgt / 2, zFront - depth / 2);
+    const v = 0.8 + R() * 0.24, warm = (R() - 0.5) * 0.05;
+    stones.push(dressStone(g, TILE_W, R() * TILE_W, R() * TILE_W, [v * (1 + warm), v, v * (1 - warm)]));
+  };
+  // a course of stones between x0 and x1, lengths 2.3-3.9, the last one trimmed to fit
+  const course = (x0, x1, yTop, hgt, depth, zFront, lmin = 2.3, lmax = 3.9) => {
+    let x = x0;
+    while (x < x1 - 1e-6) {
+      let len = lmin + R() * (lmax - lmin);
+      if (x1 - (x + len) < 0.9) len = x1 - x;
+      stone(x, x + len, yTop, hgt, depth, zFront);
+      x += len;
+    }
+  };
+  const WX0 = -80, WX1 = 112;
+  const mono = { x0: PANEL.x - PANEL.w / 2, x1: PANEL.x + PANEL.w / 2, yTop: PANEL.y + PANEL.h / 2, yBot: PANEL.y - PANEL.h / 2 };
+  // coping: long capstones projecting 0.14 in front of the wall, the chain rests on their top (y = 0)
+  course(WX0 - R() * 3, WX1, 0, 0.45, 1.2, FRONT_Z + 0.14, 3.6, 5.6);
+  // first course, then two courses beside the monolith, then plain courses into the dark
+  course(WX0 - R() * 3, WX1, -0.45, -0.45 - mono.yTop, 0.5, FRONT_Z);
+  const midH = (mono.yTop - mono.yBot) / 2;
+  for (const yTop of [mono.yTop, mono.yTop - midH]) {
+    course(WX0 - R() * 3, mono.x0, yTop, midH, 0.5, FRONT_Z);
+    course(mono.x1, WX1, yTop, midH, 0.5, FRONT_Z);
+  }
+  for (let yTop = mono.yBot; yTop > -15; yTop -= 1.5) course(WX0 - R() * 3, WX1, yTop, 1.5, 0.5, FRONT_Z);
+  const wallGeo = mergeGeometries(stones);
+  for (const g of stones) g.dispose();
+  const wall = new THREE.Mesh(wallGeo, honed);
+  wall.castShadow = true;
+  wall.receiveShadow = false;
+  scene.add(wall);
+  // black behind the joints
+  const backing = new THREE.Mesh(new THREE.PlaneGeometry(WX1 - WX0 + 10, 16), new THREE.MeshBasicMaterial({ color: 0x000000 }));
+  backing.position.set((WX0 + WX1) / 2, -0.5 - 8, FRONT_Z - 0.45); // from just under the coping down: never above the ledge
+  scene.add(backing);
+  // An invisible fence in front of the chain: it only casts shadow (no colour, no depth), so the raking light rakes the
+  // stone but never reaches the glossy blocks on top, whose fronts would flare white.
+  const shield = new THREE.Mesh(new THREE.PlaneGeometry(WX1 - WX0 + 10, 1.8), new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false, side: THREE.DoubleSide }));
+  shield.position.set((WX0 + WX1) / 2, 0.85, 0.95);
+  shield.castShadow = true;
+  scene.add(shield);
+  // the top the chain runs along: one long honed surface
+  const topTex = wallTex.clone(); topTex.repeat.set(L / TILE_W, 6 / TILE_W); topTex.needsUpdate = true;
+  const top = new THREE.Mesh(new THREE.PlaneGeometry(L, 6), new THREE.MeshStandardMaterial({ map: topTex, color: 0x9a9894, roughness: 0.55, metalness: 0, envMapIntensity: 0.5 }));
   top.rotation.x = -Math.PI / 2;
-  top.position.set(X0 + L / 2, 0, FRONT_Z - 3);
+  top.position.set(X0 + L / 2, -0.004, FRONT_Z - 0.9 - 3);
   top.receiveShadow = true;
   scene.add(top);
-  // Rock displacement: fBm lumps, ridged creases and vertical joints; flat where the panel is dressed.
-  const rock = (x, y) => {
-    const ridge = (v) => 1 - Math.abs(2 * v - 1);
-    let d = 0.55 * ridge(fbm2(x / 3.2, y / 3.8, 5, 4)) + 0.3 * ridge(fbm2(x / 1.1, y / 1.5, 9, 3)) + 0.25 * (fbm2(x / 7, y / 7, 21, 2) - 0.5) - 0.5;
-    const jx = Math.round(x / 7.5) * 7.5 + (vn2(Math.round(x / 7.5), 0.5, 13) - 0.5) * 2.5;
-    const nearPanel = smooth(clamp((Math.abs(x - PANEL.x) - PANEL.w / 2 - 1.5) / 2));
-    d -= 0.4 * Math.exp(-(((x - jx) / 0.22) ** 2)) * smooth(clamp((-y - 0.8) / 2)) * nearPanel;
-    d *= smooth(clamp(-y / 0.7)); // meet the top edge cleanly
-    const px = Math.max(0, Math.abs(x - PANEL.x) - PANEL.w / 2 - 0.25), py = Math.max(0, Math.abs(y - PANEL.y) - PANEL.h / 2 - 0.25);
-    d *= smooth(clamp(Math.hypot(px, py) / 0.5));
-    return d;
-  };
-  const rockGeo = (x0, x1, y0, y1, step) => {
-    const nx = Math.round((x1 - x0) / step), ny = Math.round((y1 - y0) / step);
-    const g = new THREE.PlaneGeometry(x1 - x0, y1 - y0, nx, ny);
-    const p = g.attributes.position;
-    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
-    for (let i = 0; i < p.count; i++) {
-      let x = p.getX(i) + cx, y = p.getY(i) + cy;
-      // jitter interior vertices so the facets split irregularly, like broken stone, not a grid
-      const edge = Math.abs(x - x0) < 1e-3 || Math.abs(x - x1) < 1e-3 || Math.abs(y - y0) < 1e-3 || Math.abs(y - y1) < 1e-3;
-      if (!edge) {
-        const ix = Math.round((x - x0) / step), iy = Math.round((y - y0) / step);
-        x += (hash1(ix * 7919 + iy * 104729 + 1) - 0.5) * step * 0.8;
-        y += (hash1(ix * 7919 + iy * 104729 + 2) - 0.5) * step * 0.8;
-        p.setX(i, x - cx); p.setY(i, y - cy);
-      }
-      p.setZ(i, rock(x, y));
-    }
-    g.computeVertexNormals();
-    g.translate((x0 + x1) / 2, (y0 + y1) / 2, 0);
-    return g;
-  };
-  // fine rock near the camera's work, coarse rock beyond
-  const nearX0 = XG - 34, nearX1 = XG + 30;
-  const cliffNear = new THREE.Mesh(rockGeo(nearX0, nearX1, -DEPTH, 0, 0.26), graniteMat((nearX1 - nearX0) / TILE, DEPTH / TILE, 0.62, false, true, true));
-  cliffNear.position.z = FRONT_Z;
-  cliffNear.castShadow = cliffNear.receiveShadow = true;
-  scene.add(cliffNear);
-  const cliffFar = new THREE.Mesh(rockGeo(X0, nearX0 + 0.01, -DEPTH, 0, 1.0), graniteMat((nearX0 - X0) / TILE, DEPTH / TILE, 0.62, false, true, true));
-  cliffFar.position.z = FRONT_Z;
-  scene.add(cliffFar);
-  const cliffFar2 = new THREE.Mesh(rockGeo(nearX1 - 0.01, X0 + L, -DEPTH, 0, 1.0), graniteMat((X0 + L - nearX1) / TILE, DEPTH / TILE, 0.62, false, true, true));
-  cliffFar2.position.z = FRONT_Z;
-  scene.add(cliffFar2);
-  const cliff = cliffNear;
-  // a bevelled lip where the top meets the cliff, catching a highlight
-  const lip = new THREE.Mesh(new THREE.BoxGeometry(L, 0.12, 0.12), graniteMat(L / TOP_TILE, 0.05, 0.6, false, true));
-  lip.position.set(X0 + L / 2, -0.04, FRONT_Z - 0.03);
-  scene.add(lip);
 
-  // The rule, carved deep into a dressed panel of the bedrock.
-  const ins = inscription('21,000,000', gr);
-  const carve = new THREE.Mesh(new THREE.PlaneGeometry(PANEL.w, PANEL.h), new THREE.MeshStandardMaterial({
-    map: ins.map, normalMap: ins.normal, normalScale: new THREE.Vector2(2.4, 2.4), roughness: 0.42, metalness: 0,
+  // The monolith: one polished block, 5 cm proud of the wall, with the rule chiselled into it.
+  const ins = inscriptionMaps('21,000,000', darkTile, 2048 / PANEL.w);
+  const monoGeo = new RoundedBoxGeometry(PANEL.w, PANEL.h, 0.6, 2, 0.035);
+  {
+    const p = monoGeo.attributes.position, uv = monoGeo.attributes.uv;
+    for (let i = 0; i < p.count; i++) uv.setXY(i, p.getX(i) / PANEL.w + 0.5, p.getY(i) / PANEL.h + 0.5);
+  }
+  const carve = new THREE.Mesh(monoGeo, new THREE.MeshStandardMaterial({
+    map: ins.map, normalMap: ins.normal, normalScale: new THREE.Vector2(1, 1), roughnessMap: ins.rough, roughness: 1, metalness: 0, envMapIntensity: 1.0,
   }));
-  carve.position.set(PANEL.x, PANEL.y, FRONT_Z + 0.01);
-  carve.receiveShadow = true;
+  carve.position.set(PANEL.x, PANEL.y, FRONT_Z + 0.05 - 0.3);
   scene.add(carve);
+  const cliff = wall;
 
-  // Light: a cool high key to show the stone; warm glow near the head of the chain.
+  // Light: moonlight from high front-left for form; a low cool light raking across the wall from the left.
   const moon = new THREE.DirectionalLight(0xc6d4ff, 0.35);
   moon.position.set(-6, 10, 12);
   scene.add(moon);
-  // cold light raking across the rock face from high left, so every lump and the carving throw shadows
-  const graze = new THREE.SpotLight(0xd4e0ff, 3.2, 60, 0.42, 0.5, 0);
-  graze.position.set(XG - 16, 5, FRONT_Z + 10);
-  graze.target.position.set(XG, -4, FRONT_Z);
+  // Far down the wall, so every stone in frame is raked at nearly the same low angle (no hotspot). It sits below the
+  // coping's top, so the coping shades the chain from it: the stone is lit, the glossy blocks are not.
+  const graze = new THREE.SpotLight(0xe8eeff, 14, 0, 0.42, 0.95, 0);
+  graze.position.set(PANEL.x - 45, -1.5, FRONT_Z + 5.0);
+  graze.target.position.set(PANEL.x + 2, -3.3, FRONT_Z);
   graze.castShadow = true;
   graze.shadow.mapSize.set(2048, 2048);
   graze.shadow.bias = -0.0005;
-  graze.shadow.normalBias = 0.03;
+  graze.shadow.normalBias = 0.05;
+  graze.shadow.camera.near = 10;
+  graze.shadow.camera.far = 90;
   scene.add(graze, graze.target);
   const warm = [0, 1, 2].map(() => { const p = new THREE.PointLight(0xff8a2a, 0, 7, 1.6); scene.add(p); return p; });
 
@@ -344,8 +401,9 @@ export async function verse3ChainStage(film) {
       mining.visible = kn < blocks.length && t < blocks[Math.min(kn, blocks.length - 1)].t - 0.2;
       if (mining.visible) {
         mining.position.set(xOf(kn), 0.5, 0);
-        mineMat.map = mineTex[Math.floor(t * 30) % mineTex.length];
-        mineMat.opacity = 0.35 + 0.2 * hash1(Math.floor(t * 30));
+        // the next block's digits churn gently (a few times a second), at a steady brightness
+        mineMat.map = mineTex[Math.floor(t * 2.5) % mineTex.length];
+        mineMat.opacity = 0.4;
       }
       // warm light rides with the newest blocks
       const hk = headAt(t);
@@ -357,7 +415,7 @@ export async function verse3ChainStage(film) {
       // dust where the newest block hit
       const lastT = hk >= 0 ? blocks[hk].t : -99;
       puff.burst(t - lastT, [hk >= 0 ? xOf(hk) : 0, 0.05, 0.3], { power: 0.4, spread: 0.6, up: 0.3, life: 0.6, gravity: 1.5, seed: hk + 50 });
-      graze.intensity = 3.2;
+      graze.intensity = t >= 150.95 ? 14 : 0; // the raking light belongs to the granite shots only
       moon.intensity = 0.35;
       carve.visible = true;
       horizon.position.set(headX(t) - 160, 4, -20);

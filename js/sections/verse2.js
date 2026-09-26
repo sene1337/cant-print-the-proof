@@ -8,7 +8,8 @@ import { mingStage, SEAL_POS } from '../stages/verse2-ming.js';
 import { barStage } from '../stages/verse2-bar.js';
 import { vaultStage, DOOR } from '../stages/verse2-vault.js';
 import { tvStage, SCREEN } from '../stages/verse2-tv.js';
-import { fiatStage, CUT_X, TABLE_Y } from '../stages/verse2-fiat.js';
+import { fiatStage } from '../stages/verse2-fiat.js';
+import { rentStage } from '../stages/verse2-rent.js';
 import { impactShake } from '../props/verse2-kit.js';
 
 // Stage builders this section owns: { id: async (film) => stage }. Ids must be unique across the film.
@@ -19,12 +20,14 @@ export const stages = {
   'verse2-vault': vaultStage,
   'verse2-tv': tvStage,
   'verse2-fiat': fiatStage,
+  'verse2-rent': rentStage,
 };
 
 // Wrap a camera move with a deterministic impact shake at song time t0.
 const shaken = (camFn, t0, amp = 0.012, decay = 9) => (ctx, cam, stage) => {
   camFn(ctx, cam, stage);
-  const [dx, dy] = impactShake(ctx.t, t0, amp, decay);
+  // flash safety: a slow, small thud (about 3 Hz, 60% of the asked amplitude); a fast rattle strobes high-contrast edges
+  const [dx, dy] = impactShake(ctx.t, t0, amp * 0.6, decay * 1.2, 18);
   cam.rotateX(dy);
   cam.rotateY(dx);
 };
@@ -60,14 +63,16 @@ export function shots(S, T) {
   // 4. "every emperor swore it would never happen again": a line of emperors' denarii, each smaller, more clipped
   //    and greyer than the last. The camera trucks down the reigns.
   const rowX = [0, 2.21, 4.28, 6.21, 7.99, 9.64, 11.15];
-  S(B(54.833), 'verse2-coins', orbitCam({ target: (c) => [-lerp(1.4, 9.6, easeInOut(c.u)), 0.05, -0.1], dist: [5.0, 4.4], az: [172, 186], el: [62, 67], fov: 32 }),
+  //    Four coins fill the frame, from pure silver to clipped bronze. Flash safety: a slow push only (a pan along the
+  //    row slid the coins' relief through the frame fast enough to count as flashing).
+  S(B(54.833), 'verse2-coins', orbitCam({ target: (c) => [lerp(0.1, -0.15, c.u), 0.05, -0.1], dist: [8.3, 7.5], az: [178, 181], el: [61, 64], fov: 32 }),
     (s) => { s.rowAt(); s.rim.intensity = 0; s.floor.material.clearcoat = 0; s.key.position.set(3, 6, -3); s.key.target.position.set(-5, 0, 0); s.key.angle = 1.0; s.key.intensity = 8; },
     { tint: [0.97, 1.0, 1.04] });
 
   // 5. "Then in China they printed me, the first fiat to fall": the Ming note on a lacquer table.
-  //    A jade seal slams down on "printed" and lifts off a fresh red seal.
+  //    A bronze tortoise-knob seal slams down on "printed" and lifts off: the note's own treasury seal, freshly inked.
   const tPrinted = W('printed', 57);
-  S(W('then', 56.5), 'verse2-ming', shaken(orbitCam({ target: [0, 0, 0.3], dist: [3.4, 2.45], az: [-16, -7], el: [56, 64], fov: 32, ease: easeInOut }), tPrinted, 0.016),
+  S(W('then', 56.5), 'verse2-ming', shaken(orbitCam({ target: [SEAL_POS[0], 0.02, SEAL_POS[2] - 0.12], dist: [3.3, 1.95], az: [-16, -6], el: [55, 66], fov: 32, ease: easeInOut }), tPrinted, 0.016),
     (s, c) => { s.sealAt(c.t, tPrinted); });
 
   // 6. "paper by decree, and it didn't last at all": the note burns in from its edges and is gone on "all".
@@ -96,8 +101,10 @@ export function shots(S, T) {
 
   // 10. "Thirty-three, bring your gold to the bank by May": a line of Liberty double eagles rolls into the open vault.
   const t33 = W('thirty-three', 67);
-  S(t33, 'verse2-vault', moveCam({ from: [2.5, 0.55, 8.2], to: [2.0, 0.85, 2.9], look: [0, 0.45, 6.6], look2: [-0.2, 0.95, -0.6], fov: 34, ease: easeInOut }),
-    (s, c) => { s.rollAt(c.t, t33 - 0.3); s.coinKey.intensity = 45; });
+  //     Flash safety: a wider shot (the door fills the frame, each coin's relief is small on screen) and a slow
+  //     roll, about 0.6 turns a second, with space between the coins.
+  S(t33, 'verse2-vault', moveCam({ from: [4.6, 1.5, 8.2], to: [3.9, 1.35, 7.1], look: [0, 1.0, 1.2], look2: [-0.1, 1.05, 0.7], fov: 34, ease: easeInOut }),
+    (s, c) => { s.rollAt(c.t, t33 - 0.3, 1.5, 2.4, 1.2); s.coinKey.intensity = 32; });
 
   // 11. "or it's ten years": the door swings shut and slams on "ten"; the bolts shoot home.
   const tTen = W('ten', 70.3);
@@ -121,11 +128,12 @@ export function shots(S, T) {
       s.cell.visible = true;
       // above the frame at the cut, slams down on "cell", bounces
       const dt = c.t - tCell;
-      const y = dt < 0 ? lerp(2.3, 0, Math.pow(clamp((c.t - c.shot.t) / (tCell - c.shot.t)), 1.3)) : Math.abs(Math.sin(dt * 26)) * 0.05 * Math.exp(-dt * 9);
+      const y = dt < 0 ? lerp(2.3, 0, Math.pow(clamp((c.t - c.shot.t) / (tCell - c.shot.t)), 1.3)) : Math.abs(Math.sin(dt * 14)) * 0.04 * Math.exp(-dt * 10);
       s.cell.position.set(0.05, y, 6.2);
     }, { aperture: 0.00022, focus: 1.5, maxblur: 0.009 });
 
-  // 13. "Seventy-one, Sunday night on TV": a dark 1970s living room; the set flicks on to a window full of gold light.
+  // 13. "Seventy-one, Sunday night on TV": a dark 1970s living room; the set flicks on to the gold window: a teller's window
+  //     under a GOLD sign, gold bars stacked behind the glass.
   //     The wall calendar reads SUNDAY 15 AUGUST 1971.
   const t71 = W('seventy-one', 73);
   //     Opens close on the calendar as the tube flicks on and lights it, then swings to the set.
@@ -138,9 +146,9 @@ export function shots(S, T) {
   S(B(75.067), 'verse2-tv', moveCam({ from: [0.4, 1.14, 2.45], to: [0.12, 1.07, 1.8], look: [SCREEN.x, SCREEN.y, SCREEN.z], fov: 32 }),
     (s, c) => {
       s.tvAt(c.t, {
-        shut: easeIn(clamp((c.t - tClosed + 0.08) / 0.2), 2),
-        leak: 1 - clamp((c.t - tClosed - 0.12) / 0.25),
-        cold: clamp((c.t - tClosed - 0.2) / (tWindow - tClosed + 0.05)),
+        // the shutter slams down and lands exactly on "closed", with a small bounce
+        shut: c.t < tClosed ? easeIn(clamp((c.t - tClosed + 0.16) / 0.16), 2) : 1 - 0.035 * Math.abs(Math.sin((c.t - tClosed) * 28)) * Math.exp(-(c.t - tClosed) * 12),
+        cold: clamp((c.t - tClosed - 0.08) / (tWindow - tClosed + 0.15)),
       });
     });
 
@@ -167,17 +175,19 @@ export function shots(S, T) {
   S(B(78.3), 'verse2-fiat', moveCam({ from: [0.35, 1.32, 3.25], to: [0.18, 1.26, 2.75], look: [0.05, 1.2, 0], fov: 34 }),
     (s, c) => { s.cool.intensity = 1.2; s.erodeAt(c.t, eOf, tLost, tPct); });
 
-  // 17. "and they call it two percent": the same shears that clipped the gold now trim a sliver off a bank note
-  //     on the beat.
-  const cuts = [B(80.933), B(81.567), B(82.233), B(82.9)];
+  // 17. "and they call it two percent": a bank note hangs backlit in front of a frosted office window. On each beat the
+  //     shears take exactly two percent off its edge, and the strip drops into a tin labelled RENT / 2%.
+  // the first snip lands fast, on the accent at 80.60 (0.22 s into the shot), the second on the word "two"
+  const cuts = [80.6, W('two', 81), B(82.233), B(82.9)];
   const tAnd = W('and', 80.3);
-  const trimLight = (s) => { s.fluor.intensity = 9; s.cool.intensity = 0.8; s.rimG.intensity = 2.0; };
-  S(tAnd, 'verse2-fiat', moveCam({ from: [CUT_X + 2.8, TABLE_Y + 1.35, 0.55], to: [CUT_X + 2.35, TABLE_Y + 1.18, 0.4], look: [CUT_X - 0.3, TABLE_Y + 0.05, -0.1], fov: 34 }),
-    (s, c) => { trimLight(s); s.trimAt(c.t, cuts, tAnd); });
+  //     Frontal, holding the note, the scissors' pivot and the tin in one frame.
+  S(tAnd, 'verse2-rent', moveCam({ from: [-0.8, 1.72, 4.2], to: [-0.55, 1.64, 3.85], look: [0.72, 1.22, 0.05], fov: 34 }),
+    (s, c) => { s.faceLabel(-0.7, 4.0); s.trimAt(c.t, cuts, tAnd - 1); });
 
-  // 18. "like it's rent": closer. Snip on the beat, snip on "rent"; the slivers fall; the shears hang open. Fade out
-  //     for chorus 2.
-  S(W('like', 81.7), 'verse2-fiat', moveCam({ from: [CUT_X + 2.05, TABLE_Y + 0.78, 0.8], to: [CUT_X + 1.8, TABLE_Y + 0.7, 0.62], look: [CUT_X - 0.1, TABLE_Y + 0.04, -0.3], fov: 34 }),
-    (s, c) => { trimLight(s); s.rimG.intensity = 0.6; s.trimAt(c.t, cuts, tAnd); },
-    { fadeOut: 0.35, bloom: 0.35 });
+  // 18. "like it's rent": a slow push down onto the tin's label while the strips drop in from the note above; the last
+  //     two percent falls in on "rent". Fade out for chorus 2. (Flash safety: a faster crane scrolled the note's
+  //     print through the frame like moving stripes.)
+  S(W('like', 81.7), 'verse2-rent', moveCam({ from: [0.0, 1.08, 3.0], to: [0.3, 0.72, 2.05], look: [1.05, 0.8, 0.1], look2: [1.12, 0.45, 0.14], fov: 34, ease: easeInOut }),
+    (s, c) => { s.faceLabel(0.2, 2.15); s.trimAt(c.t, cuts, tAnd - 1); },
+    { fadeOut: 0.35 });
 }

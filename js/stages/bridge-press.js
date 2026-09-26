@@ -1,40 +1,34 @@
-// The money printer (instrumental break, 102.26-109.73): two giant chrome rollers bolted to an endless wall,
-// a green slot of light behind them, and a jet of bank notes that shoots out faster and faster into a rising sea
-// of paper under rows of fluorescent tubes. Everything is a pure function of song time.
+// The money printer (first half of the break, 102.26-106.37): two giant chrome rollers bolted to an endless wall,
+// a green line of light between them, and a continuous printed sheet of bank notes pouring over a curl into a rising
+// sea of paper under rows of fluorescent tubes; then the whole wall of printers switches on, one after another.
+// Everything is a pure function of song time.
+// Flash safety: speeds stay slow enough and lights change smoothly, so no area of the frame flickers.
 import * as THREE from 'three';
 import { studioEnv } from '../film.js';
-import { NoteCloud } from '../props/notes.js';
 import { normalFromHeight } from '../tex.js';
-import { bridgeNote, readableBothSides } from '../props/bridge-note.js';
-import { clamp, hash1, lerp, rng } from '../util.js';
+import { bridgeNote } from '../props/bridge-note.js';
+import { clamp, hash1, lerp, rng, smooth } from '../util.js';
 
 export const PRESS = {
   t0: 102.26,       // the break starts
-  tEnd: 109.73,     // the drop
+  tEnd: 106.37,     // the hall's last frame
   R: 1.4,           // roller radius
   L: 10,            // roller length (along x)
   zAxis: 1.6,       // roller axes stand this far in front of the wall
-  pitch: 0.5,       // paper travel per printed row
-  r0: 5,            // rows per second when the break starts
-  c: 2.9,           // acceleration of the row rate (rows/s^2 / 2)
+  pitch: 0.532,     // paper travel per printed row (one note's short side on the web)
+  r0: 0.8,          // rows per second when the break starts (slow enough that no spot on screen flickers)
+  c: 0.3,           // acceleration of the row rate (rows/s^2 / 2): about 3.5 rows/s by the end of the hall
+  webLen: 16.2,     // the printed web: out of the nip, over a curl, straight down past the lowest sea level
   spacing: 13.5,    // distance between printers along the wall
-  // The drum fill before the drop (onsets measured from the master): each hit switches on the next pair of printers.
-  waveOn: [108.333, 108.667, 108.967, 109.133, 109.3, 109.467, 109.633],
+  // The printers down the wall switch on in a smooth sweep during the wide shot (each fades up; no pops).
+  waveOn: [104.55, 104.75, 104.95, 105.15, 105.35, 105.55, 105.75],
+  fadeOn: 0.35,
 };
 
 // Rows printed since t0 (negative before). Rate is r0 before t0, then rises linearly.
 export function rowsAt(t) {
   const tau = t - PRESS.t0;
   return tau < 0 ? PRESS.r0 * tau : PRESS.r0 * tau + PRESS.c * tau * tau;
-}
-function rowTime(k) {
-  if (k < 0) return PRESS.t0 + k / PRESS.r0;
-  const { r0, c } = PRESS;
-  return PRESS.t0 + (-r0 + Math.sqrt(r0 * r0 + 4 * c * k)) / (2 * c);
-}
-function rateAt(t) {
-  const tau = t - PRESS.t0;
-  return tau < 0 ? PRESS.r0 : PRESS.r0 + 2 * PRESS.c * tau;
 }
 // The sea of paper rises through the break, faster at the end.
 export function seaLevel(t) {
@@ -125,17 +119,18 @@ function wallTexture() {
 function seaTexture(note) {
   const S = 2048, c = canvas(S, S), g = c.getContext('2d');
   const R = rng(77);
-  g.fillStyle = '#1f2a23'; g.fillRect(0, 0, S, S);
+  // The gaps and shadows between notes stay light: a high-contrast carpet crawls (flickers) when the camera moves.
+  g.fillStyle = '#6f7f73'; g.fillRect(0, 0, S, S);
   const nw = 150, nh = nw / 2.35;
   for (let i = 0; i < 1500; i++) {
-    const x = R() * S, y = R() * S, a = R() * Math.PI * 2, shade = 0.55 + R() * 0.45;
+    const x = R() * S, y = R() * S, a = R() * Math.PI * 2, shade = 0.75 + R() * 0.25;
     for (const ox of [-S, 0, S]) {
       for (const oy of [-S, 0, S]) {
         const px = x + ox, py = y + oy;
         if (px < -nw || px > S + nw || py < -nw || py > S + nw) continue;
         g.save();
         g.translate(px, py); g.rotate(a);
-        g.fillStyle = 'rgba(0,0,0,0.45)';
+        g.fillStyle = 'rgba(0,0,0,0.18)';
         g.fillRect(-nw / 2 + 5, -nh / 2 + 7, nw, nh);
         g.drawImage(note, -nw / 2, -nh / 2, nw, nh);
         g.fillStyle = `rgba(0,0,0,${(1 - shade).toFixed(3)})`;
@@ -171,6 +166,83 @@ function gearGeometry(r, teeth, depth, thick, holes = 5) {
   g.translate(0, 0, -thick / 2);
   g.computeVertexNormals();
   return g;
+}
+
+// The printed web: a continuous sheet of uncut notes (8 across) that leaves the nip, curls over and hangs down.
+// Its shape never changes; only the print scrolls along it, so the frame stays calm (no flicker).
+function webGeometry() {
+  const { L, zAxis, webLen } = PRESS;
+  const h0 = 0.55, rc = 1.0, arc = (Math.PI / 2) * rc;
+  const along = [];
+  for (let i = 0; i <= 12; i++) along.push((h0 * i) / 12);
+  for (let i = 1; i <= 24; i++) along.push(h0 + (arc * i) / 24);
+  for (let i = 1; i <= 40; i++) along.push(h0 + arc + ((webLen - h0 - arc) * i) / 40);
+  const across = 16;
+  const pos = [], uv = [], idx = [];
+  for (let a = 0; a < along.length; a++) {
+    const sArc = along[a];
+    let y, z;
+    if (sArc <= h0) { y = 0; z = zAxis + sArc; }
+    else if (sArc <= h0 + arc) { const th = (sArc - h0) / rc; y = -rc + rc * Math.cos(th); z = zAxis + h0 + rc * Math.sin(th); }
+    else { y = -rc - (sArc - h0 - arc); z = zAxis + h0 + rc; }
+    // a gentle ripple in the hanging part, like a real sheet
+    const hang = Math.max(0, sArc - h0 - arc);
+    for (let c = 0; c <= across; c++) {
+      const x = -L / 2 * 0.985 + (L * 0.985 * c) / across;
+      const ripple = hang > 0 ? Math.sin(x * 0.9 + hang * 0.35) * 0.08 * Math.min(1, hang / 2) : 0;
+      pos.push(x, y, z + ripple);
+      uv.push((c / across) * 8, sArc / PRESS.pitch);
+    }
+  }
+  const row = across + 1;
+  for (let a = 0; a < along.length - 1; a++) {
+    for (let c = 0; c < across; c++) {
+      const i0 = a * row + c, i1 = i0 + 1, i2 = i0 + row, i3 = i2 + 1;
+      idx.push(i0, i2, i1, i1, i2, i3);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+
+// Fresh ink is paler than a finished note: a softer print keeps the scrolling sheet from flickering.
+let webPrint = null;
+function webTexture(noteCanvas) {
+  if (!webPrint) {
+    const c = canvas(noteCanvas.width, noteCanvas.height), g = c.getContext('2d');
+    g.drawImage(noteCanvas, 0, 0);
+    g.fillStyle = 'rgba(226,231,214,0.42)';
+    g.fillRect(0, 0, c.width, c.height);
+    webPrint = texOf(c, { repeat: true });
+  }
+  return webPrint;
+}
+
+function webMaterial(noteCanvas) {
+  const map = webTexture(noteCanvas).clone();
+  map.wrapS = map.wrapT = THREE.RepeatWrapping;
+  map.needsUpdate = true;
+  const mat = new THREE.MeshStandardMaterial({
+    map, side: THREE.DoubleSide, roughness: 0.82, metalness: 0,
+    emissive: new THREE.Color(1, 1, 1), emissiveMap: map, emissiveIntensity: 0.1,
+  });
+  // uLen: how much of the web has come out of the nip (a printer that just started grows its sheet downward).
+  mat.userData.uLen = { value: 1e9 };
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uLen = mat.userData.uLen;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\n varying float vWebS;')
+      .replace('#include <uv_vertex>', `#include <uv_vertex>\n vWebS = uv.y * ${PRESS.pitch.toFixed(4)};`);
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\n varying float vWebS; uniform float uLen;')
+      .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n if (vWebS > uLen) discard;');
+  };
+  mat.customProgramCacheKey = () => 'bridge-press-web';
+  return mat;
 }
 
 export async function pressStage(film) {
@@ -221,8 +293,8 @@ export async function pressStage(film) {
   // Shared parts of one printer.
   const plate = plateTextures(noteCanvas);
   const rollerMat = new THREE.MeshPhysicalMaterial({
-    color: new THREE.Color(0.86, 0.9, 0.88), metalness: 1, roughness: 0.28,
-    map: plate.map, normalMap: plate.normal, normalScale: new THREE.Vector2(0.45, 0.45),
+    color: new THREE.Color(0.86, 0.9, 0.88), metalness: 1, roughness: 0.5,
+    map: plate.map, normalMap: plate.normal, normalScale: new THREE.Vector2(0.25, 0.25),
   });
   const capMat = new THREE.MeshPhysicalMaterial({ color: new THREE.Color(0.35, 0.38, 0.37), metalness: 1, roughness: 0.35 });
   const rollerGeo = new THREE.CylinderGeometry(R, R, L, 160, 1, false);
@@ -240,6 +312,7 @@ export async function pressStage(film) {
   const nipGeo = new THREE.BoxGeometry(L * 0.995, 0.035, 0.6);
   const haloGeo = new THREE.PlaneGeometry(L + 0.7, 6.1);
   const lampGeo = new THREE.PlaneGeometry(L + 1.6, 0.42);
+  const webGeo = webGeometry();
 
   function makeUnit(x, tOn) {
     const g = new THREE.Group();
@@ -280,8 +353,11 @@ export async function pressStage(film) {
         gears.push({ gm, which });
       }
     }
+    const webMat = webMaterial(noteCanvas);
+    const web = new THREE.Mesh(webGeo, webMat);
+    g.add(web);
     machine.add(g);
-    return { group: g, x, tOn, rollTop, rollBot, nip, nipMat, halo, haloMat, lamp, lampMat, gears };
+    return { group: g, x, tOn, rollTop, rollBot, nip, nipMat, halo, haloMat, lamp, lampMat, gears, web, webMat };
   }
   const units = [makeUnit(0, -1e9)];
   PRESS.waveOn.forEach((tOn, i) => {
@@ -303,10 +379,10 @@ export async function pressStage(film) {
   tubePos.forEach((p, i) => {
     dm.position.set(...p); dm.updateMatrix(); tubes.setMatrixAt(i, dm.matrix);
     tubes.setColorAt(i, onCol.setRGB(1, 1, 1));
-    // The hall is dark except the aisle over the hero printer; each tube lights when the printer below it starts.
+    // The hall is dark except the aisle over the hero printer; each tube fades up when the printer below it starts.
     const k = Math.round(Math.abs(p[0]) / PRESS.spacing);
     const W = PRESS.waveOn;
-    tubeOn[i] = k === 0 ? -1e9 : k <= W.length ? W[k - 1] + (p[1] > 10 ? 0.04 + 0.002 * p[2] : 0) : W[W.length - 1] + 0.03 * (k - W.length);
+    tubeOn[i] = k === 0 ? -1e9 : k <= W.length ? W[k - 1] + (p[1] > 10 ? 0.05 + 0.002 * p[2] : 0) : W[W.length - 1] + 0.05 * (k - W.length);
   });
   tubes.frustumCulled = false;
   scene.add(tubes);
@@ -326,66 +402,13 @@ export async function pressStage(film) {
   heroSpot.target.position.set(0, -3, 5);
   scene.add(heroSpot, heroSpot.target);
 
-  // The notes.
-  const cloud = new NoteCloud(noteTex, 6400, { emissive: 0.2 });
-  readableBothSides(cloud.material, 'press');
-  scene.add(cloud);
-
-  const G = 9.8, VT = 5.5, KD = 0.55;
   const S = {
-    scene, machine, units, main, cloud, sea, tubes, tubeMat, nipLight, heroSpot, top, rim, amb,
+    scene, machine, units, main, sea, tubes, tubeMat, nipLight, heroSpot, top, rim, amb,
     fx: { bloom: 0.35, threshold: 1.25, bloomRadius: 0.22, grain: 0.05, vignette: 0.55, tint: [0.95, 1.03, 0.97], sat: 0.9 },
-    rowsAt, seaLevel, rateAt,
-    // Lay out every running printer's jet of notes for time t. lanes/scale shape the hero printer's jet,
-    // otherLanes/otherScale the rest; others: false shows the hero printer alone.
-    jet(t, { lanes = 8, maxAge = 4.2, scale = 0.44, spread = 1, speed = 1, others = true, otherLanes = 5, otherScale = 0.5 } = {}) {
-      cloud.visible = true;
-      cloud.setTime(t);
-      cloud.setFlutter(1);
-      const sl = seaLevel(t);
-      const kMax = Math.floor(rowsAt(t));
-      const kLo = Math.floor(rowsAt(t - maxAge)) + 1;
-      const spans = [];
-      let total = 0;
-      for (let ui = 0; ui < units.length; ui++) {
-        const un = units[ui];
-        if (ui > 0 && (!others || t < un.tOn)) continue;
-        const kMin = ui === 0 ? kLo : Math.max(kLo, Math.ceil(rowsAt(un.tOn)));
-        const ln = ui === 0 ? lanes : otherLanes;
-        const n = Math.max(0, kMax - kMin + 1) * ln;
-        spans.push({ un, ui, kMin, ln, sc: ui === 0 ? scale : otherScale, start: total, n });
-        total += n;
-      }
-      let sp = 0;
-      cloud.layout(total, (n, d) => {
-        while (n >= spans[sp].start + spans[sp].n) sp++;
-        const s0 = spans[sp];
-        const m = n - s0.start;
-        const k = s0.kMin + Math.floor(m / s0.ln), j = m % s0.ln;
-        const tk = rowTime(k);
-        const a = t - tk;
-        if (a < 0) return false;
-        const id = ((k + 100000) * 16 + s0.ui) * 16 + j;
-        const h1 = hash1(id * 7 + 1), h2 = hash1(id * 7 + 2), h3 = hash1(id * 7 + 3), h4 = hash1(id * 7 + 4), h5 = hash1(id * 7 + 5), h6 = hash1(id * 7 + 6);
-        const u = (2.5 + 0.42 * rateAt(tk)) * speed * (0.8 + 0.4 * h1);
-        const vz = u, vy = u * (0.06 + 0.16 * (h2 - 0.35)) * spread, vx = u * 0.1 * (h3 - 0.5) * spread;
-        const ez = (1 - Math.exp(-KD * a)) / KD;
-        const eg = Math.exp(-G * a / VT);
-        const x0 = s0.un.x - L / 2 + ((j + 0.5 + 0.55 * (h4 - 0.5)) / s0.ln) * L;
-        const sway = Math.min(1, a * 1.5);
-        const x = x0 + vx * ez + Math.sin(a * (2.2 + 2.5 * h5) + h6 * 6.28) * 0.45 * sway * spread;
-        const y = -VT * a + (vy + VT) * (VT / G) * (1 - eg);
-        const z = zAxis + 0.2 + vz * ez + Math.cos(a * (1.7 + 2 * h6) + h5 * 6.28) * 0.25 * sway;
-        if (y < sl - 0.3) return false;
-        d.position.set(x, y, z);
-        const tum = Math.min(1, a * 0.9);
-        d.rotation.set(-Math.PI / 2 + tum * a * (h1 - 0.5) * 9, tum * a * (h2 - 0.5) * 5, tum * a * (h3 - 0.5) * 7);
-        d.scale.setScalar(s0.sc * (0.9 + 0.2 * h5));
-      });
-    },
+    rowsAt, seaLevel,
     update(ctx) {
       const t = ctx.t;
-      const low = ctx.T.env('low', t), high = ctx.T.env('high', t);
+      // Everything here is steady or fades smoothly: no light follows the drums (that would strobe).
       const surge = clamp((t - PRESS.t0) / (PRESS.tEnd - PRESS.t0));
       for (const un of units) {
         const on = t >= un.tOn;
@@ -393,28 +416,32 @@ export async function pressStage(film) {
         un.rollTop.rotation.x = -D / R;
         un.rollBot.rotation.x = D / R;
         for (const gr of un.gears) gr.gm.rotation.z = gr.which > 0 ? -D / R : D / R + Math.PI / 28;
-        // Idle printers are dark; a printer that switches on flares, then runs hot with the bass.
-        const flare = on && un.tOn > -1e8 ? Math.exp(-(t - un.tOn) * 5) * 4 : 0;
-        const k = on ? 2.5 + 2 * surge + 2.5 * low + flare : 0.02;
-        un.nipMat.color.setRGB(0.55, 1, 0.7).multiplyScalar(k);
-        un.haloMat.color.setRGB(0.3, 0.9, 0.5).multiplyScalar(on ? 0.5 + 0.6 * low + flare * 0.3 : 0.015);
-        un.lampMat.color.setRGB(0.55, 1, 0.7).multiplyScalar(on ? 2.4 + flare * 1.2 : 0.03);
+        // Idle printers are dark; a printer that switches on fades up over a third of a second.
+        const f = un.tOn > -1e8 ? smooth(clamp((t - un.tOn) / PRESS.fadeOn)) : 1;
+        un.nipMat.color.setRGB(0.55, 1, 0.7).multiplyScalar(lerp(0.02, 2.8 + 1.2 * surge, f));
+        un.haloMat.color.setRGB(0.3, 0.9, 0.5).multiplyScalar(lerp(0.015, 0.75, f));
+        un.lampMat.color.setRGB(0.55, 1, 0.7).multiplyScalar(lerp(0.03, 2.4, f));
+        // The web: the print scrolls with the rollers; a printer that just started pushes its sheet out and down.
+        const rows = on ? rowsAt(t) - (un.tOn > -1e8 ? rowsAt(un.tOn) : -1e6) : 0;
+        un.webMat.map.offset.y = -(((rows % 1) + 1) % 1);
+        // a fresh sheet's free end drops under its own weight, faster than the rollers feed it
+        const dtOn = t - un.tOn;
+        un.webMat.userData.uLen.value = on ? rows * PRESS.pitch + (un.tOn > -1e8 ? 4.5 * dtOn * dtOn : 0) : -1;
+        un.web.visible = on;
+        un.webMat.emissiveIntensity = 0.1;
         un.group.visible = true;
       }
       sea.position.y = seaLevel(t);
       sea.visible = true;
       machine.visible = true;
       tubes.visible = true;
-      cloud.visible = false;
-      cloud.material.emissiveIntensity = 0.2; // notes glow enough to read in the hall; the close-up dials it down
-      nipLight.intensity = 0.7 + 1.0 * low;
-      tubeMat.color.setRGB(0.78, 1, 0.84).multiplyScalar(2.3 + 0.5 * high);
-      // Tubes: off, a stutter when they strike, then on.
+      nipLight.intensity = 1.2;
+      tubeMat.color.setRGB(0.78, 1, 0.84).multiplyScalar(2.4);
+      // Tubes fade up (no strike stutter).
       let lit = 0;
       for (let i = 0; i < tubeOn.length; i++) {
-        const dt = t - tubeOn[i];
-        let b = 0.025;
-        if (dt >= 0) { b = dt < 0.14 ? (hash1(i * 31 + Math.floor(dt * 60)) > 0.45 ? 1 : 0.15) : 1; lit++; }
+        const b = lerp(0.025, 1, smooth(clamp((t - tubeOn[i]) / 0.3)));
+        lit += b;
         tubes.setColorAt(i, onCol.setRGB(b, b, b));
       }
       tubes.instanceColor.needsUpdate = true;

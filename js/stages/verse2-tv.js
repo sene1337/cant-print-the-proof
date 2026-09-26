@@ -1,4 +1,4 @@
-// VERSE 2 1971: a dark living room lit only by a wood-cabinet TV. On screen, a window full of gold light.
+// VERSE 2 1971: a dark living room lit only by a wood-cabinet TV. On screen, the bank's gold window, bars stacked behind the glass.
 // A shutter slams over it on "closed", and the picture and the room go cold blue.
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
@@ -72,62 +72,87 @@ function calendar() {
   return canvasTex(c);
 }
 
+// The picture on the set: a bank's gold window. A black-glass sign lettered GOLD in gold leaf, a brass-framed
+// teller's window with gold bars stacked behind the glass, a marble counter. Drawn once to a canvas.
+export const WIN = { x0: 300, x1: 724, y0: 214, y1: 560, W: 1024, H: 768 };
+function tellerPicture() {
+  const { W, H } = WIN;
+  const [c, g] = canvas2d(W, H);
+  // dark walnut panelling
+  const wall = g.createLinearGradient(0, 0, 0, H);
+  wall.addColorStop(0, '#120a05'); wall.addColorStop(0.7, '#24160c'); wall.addColorStop(1, '#140c07');
+  g.fillStyle = wall; g.fillRect(0, 0, W, H);
+  g.fillStyle = 'rgba(0,0,0,0.35)';
+  for (let x = 0; x < W; x += 128) g.fillRect(x, 0, 5, H);
+  // the sign: black glass, brass edge, GOLD in gold leaf
+  const sx = 322, sy = 58, sw = 380, sh = 128;
+  const brass = (x0, y0, x1, y1) => { const b = g.createLinearGradient(x0, y0, x1, y1); b.addColorStop(0, '#6e4e1c'); b.addColorStop(0.5, '#e9c878'); b.addColorStop(1, '#6e4e1c'); return b; };
+  g.fillStyle = brass(sx, sy, sx, sy + sh); g.beginPath(); g.roundRect(sx - 10, sy - 10, sw + 20, sh + 20, 14); g.fill();
+  g.fillStyle = '#060504'; g.beginPath(); g.roundRect(sx, sy, sw, sh, 8); g.fill();
+  const leaf = g.createLinearGradient(0, sy + 18, 0, sy + sh - 18);
+  leaf.addColorStop(0, '#fff3b8'); leaf.addColorStop(0.45, '#f0c24a'); leaf.addColorStop(1, '#9a6512');
+  g.font = '900 104px "Playfair Display"'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.lineWidth = 6; g.strokeStyle = '#3a2408'; g.strokeText('GOLD', sx + sw / 2, sy + sh / 2 + 6);
+  g.fillStyle = leaf; g.fillText('GOLD', sx + sw / 2, sy + sh / 2 + 6);
+  // the window: brass frame, warm vault light behind the glass
+  const { x0, x1, y0, y1 } = WIN;
+  g.fillStyle = brass(x0 - 26, y0 - 26, x1 + 26, y1 + 26); g.fillRect(x0 - 26, y0 - 26, x1 - x0 + 52, y1 - y0 + 52);
+  g.fillStyle = '#2a1a0c'; g.fillRect(x0 - 8, y0 - 8, x1 - x0 + 16, y1 - y0 + 16);
+  const glow = g.createRadialGradient((x0 + x1) / 2, y1 - 60, 20, (x0 + x1) / 2, y1 - 80, 330);
+  glow.addColorStop(0, '#ffcf6a'); glow.addColorStop(0.45, '#9a5a14'); glow.addColorStop(1, '#241206');
+  g.fillStyle = glow; g.fillRect(x0, y0, x1 - x0, y1 - y0);
+  // gold bars stacked on a shelf: 5, 4, 3, 2
+  const bw = 70, bh = 30, shelf = y1 - 34;
+  g.fillStyle = '#3a220c'; g.fillRect(x0, shelf, x1 - x0, 12);
+  for (let row = 0; row < 4; row++) {
+    const n = 5 - row, y = shelf - (row + 1) * bh;
+    for (let k = 0; k < n; k++) {
+      const x = (x0 + x1) / 2 - (n * bw) / 2 + k * bw + 3;
+      const bar = g.createLinearGradient(0, y, 0, y + bh);
+      bar.addColorStop(0, '#fff0a8'); bar.addColorStop(0.35, '#f2c14a'); bar.addColorStop(1, '#a8701c');
+      g.fillStyle = bar;
+      g.beginPath(); g.moveTo(x + 8, y + 2); g.lineTo(x + bw - 14, y + 2); g.lineTo(x + bw - 6, y + bh - 2); g.lineTo(x, y + bh - 2); g.closePath(); g.fill();
+      g.strokeStyle = 'rgba(90,50,10,0.8)'; g.lineWidth = 2; g.stroke();
+    }
+  }
+  // a faint sheen on the glass
+  g.fillStyle = 'rgba(255,255,255,0.05)';
+  g.beginPath(); g.moveTo(x0 + 40, y0); g.lineTo(x0 + 130, y0); g.lineTo(x0 + 10, y1); g.lineTo(x0 - 80, y1); g.fill();
+  // the marble counter and its brass rail
+  const mar = g.createLinearGradient(0, y1 + 26, 0, H);
+  mar.addColorStop(0, '#cfc6b4'); mar.addColorStop(0.2, '#8f8676'); mar.addColorStop(1, '#2c261e');
+  g.fillStyle = mar; g.fillRect(150, y1 + 26, W - 300, H - y1 - 26);
+  g.fillStyle = brass(0, y1 + 26, 0, y1 + 40); g.fillRect(150, y1 + 26, W - 300, 12);
+  return canvasTex(c);
+}
+
 function screenMaterial() {
   return new THREE.ShaderMaterial({
-    uniforms: { uTime: { value: 0 }, uOn: { value: 1 }, uShut: { value: 0 }, uCold: { value: 0 }, uGain: { value: 1 }, uLeak: { value: 1 } },
+    uniforms: { uTime: { value: 0 }, uOn: { value: 1 }, uShut: { value: 0 }, uCold: { value: 0 }, uGain: { value: 1 }, uPic: { value: tellerPicture() } },
     vertexShader: /* glsl */ `
       varying vec2 vUv;
       void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
     fragmentShader: /* glsl */ `
       varying vec2 vUv;
-      uniform float uTime, uOn, uShut, uCold, uGain, uLeak;
+      uniform float uTime, uOn, uShut, uCold, uGain;
+      uniform sampler2D uPic;
       float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
       float rrect(vec2 p, vec2 b, float r) { vec2 q = abs(p) - b + r; return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r; }
-      float inBand(float x, float a, float b) { return step(a, x) * step(x, b); }
       vec3 picture(vec2 uv) {
-        // a dark room wall with faint wallpaper stripes
-        vec3 col = vec3(0.065, 0.042, 0.028) * (0.88 + 0.12 * step(0.5, fract(uv.x * 36.0)));
-        vec2 w0 = vec2(0.34, 0.17), w1 = vec2(0.66, 0.85);
-        vec2 wc = 0.5 * (w0 + w1), wh = 0.5 * (w1 - w0);
-        vec2 d = (uv - wc) / wh;
-        float inGlass = step(abs(d.x), 1.0) * step(abs(d.y), 1.0);
-        float inFrame = step(abs(d.x), 1.13) * step(abs(d.y), 1.09) * (1.0 - inGlass);
-        // gold light behind the glass, hottest in the middle
-        float r = length(d * vec2(1.0, 0.75));
-        vec3 gold = mix(vec3(1.0, 0.5, 0.1), vec3(1.0, 0.82, 0.45), smoothstep(1.0, 0.0, r)) * 1.3;
-        float mull = max(step(abs(uv.x - wc.x), 0.009), step(abs(uv.y - (wc.y + 0.1)), 0.009));
-        vec3 glass = mix(gold, vec3(0.1, 0.06, 0.035), mull);
-        // two louvered shutters swing in from the sides and meet in the middle
-        float sh = uShut;
-        float px = abs(d.x);
-        float cover = step(1.0 - sh, px) * inGlass;
-        float lx = clamp((px - (1.0 - sh)) / max(sh, 0.001), 0.0, 1.0);   // 0 at the leading edge .. 1 at the hinge
-        float sy = fract((d.y + 1.0) * 8.0);
-        float louver = mix(0.44, 0.16, smoothstep(0.05, 0.82, sy));
-        float gapL = step(0.84, sy);
-        float stile = max(step(0.9, lx), step(lx, 0.1)) + step(0.94, abs(d.y));
-        stile = clamp(stile, 0.0, 1.0);
-        vec3 wood = vec3(0.46, 0.29, 0.15);
-        vec3 panel = wood * mix(louver * (1.0 - 0.75 * gapL), 0.4, stile);
-        panel += gold * gapL * (1.0 - stile) * uLeak * 0.75;          // light leaking through the slats
-        panel *= 1.0 - 0.45 * smoothstep(0.12, 0.0, lx) * step(0.02, 1.0 - sh); // the leading edge in shadow
-        // the swinging shutters throw a shadow onto the glass beside them
-        float edgeGap = (1.0 - sh) - px;
-        glass *= 1.0 - 0.65 * smoothstep(0.22, 0.0, edgeGap) * step(0.0, edgeGap) * step(0.01, sh);
-        vec3 win = mix(glass, panel, cover);
-        // curtains, the frame, the sill; warm spill on the wall until the light is cut off
-        float open = 1.0 - sh;
-        float spill = exp(-max(0.0, max(abs(d.x) - 1.0, abs(d.y) - 1.0)) * 3.5) * (0.38 * open + 0.05 * uLeak);
-        col += vec3(1.0, 0.58, 0.2) * spill;
-        float curt = max(inBand(uv.x, 0.13, 0.29), inBand(uv.x, 0.71, 0.87)) * inBand(uv.y, 0.06, 0.95);
-        float fold = 0.5 + 0.5 * sin(uv.x * 150.0);
-        vec3 curtain = vec3(0.34, 0.06, 0.045) * (0.45 + 0.55 * fold) * (0.35 + 1.6 * spill);
-        col = mix(col, curtain, curt);
-        col = mix(col, vec3(0.2, 0.12, 0.07) * (0.6 + 1.2 * spill), inFrame);
-        float sill = inBand(uv.x, w0.x - 0.05, w1.x + 0.05) * inBand(uv.y, w0.y - 0.07, w0.y - 0.035);
-        col = mix(col, vec3(0.36, 0.24, 0.14) * (0.5 + 1.4 * spill), sill);
-        col = mix(col, win, inGlass);
-        // the room goes cold: the picture stays, washed in blue
+        vec3 col = texture2D(uPic, uv).rgb;
+        // a steel roll-down shutter drops over the teller's window (low-contrast slats: flash safe)
+        float x0 = ${(WIN.x0 / WIN.W).toFixed(4)}, x1 = ${(WIN.x1 / WIN.W).toFixed(4)};
+        float yt = ${(1 - WIN.y0 / WIN.H).toFixed(4)}, yb = ${(1 - WIN.y1 / WIN.H).toFixed(4)};
+        float edge = yt - uShut * (yt - yb);
+        float inX = step(x0, uv.x) * step(uv.x, x1);
+        float cover = inX * step(edge, uv.y) * step(uv.y, yt) * step(0.001, uShut);
+        float slat = fract((yt - uv.y) / 0.024);
+        float ridge = 0.92 + 0.08 * sin(slat * 6.2832);
+        vec3 steel = vec3(0.27, 0.28, 0.3) * ridge;
+        float rail = step(edge, uv.y) * step(uv.y, edge + 0.02);
+        steel = mix(steel, vec3(0.13, 0.13, 0.14), rail);
+        col = mix(col, steel, cover);
+        // the gold light goes; everything turns cold
         float l = dot(col, vec3(0.3, 0.55, 0.15));
         vec3 cold = vec3(0.07, 0.13, 0.3) * (0.75 + 0.25 * uv.y) + vec3(0.3, 0.45, 0.85) * l * 0.9;
         return mix(col, cold, uCold);
@@ -279,9 +304,9 @@ export async function tvStage(film) {
     fx: { bloom: 0.7, threshold: 0.9, bloomRadius: 0.5, grain: 0.06, vignette: 0.6, tint: [1.0, 0.98, 0.96] },
 
     // on: CRT turn-on 0..1; shut: shutter 0..1; cold: picture and room going blue 0..1.
-    tvAt(t, { on = 1, shut = 0, cold = 0, leak = 1 } = {}) {
+    tvAt(t, { on = 1, shut = 0, cold = 0 } = {}) {
       const U = scrMat.uniforms;
-      U.uTime.value = t; U.uOn.value = on; U.uShut.value = shut; U.uCold.value = cold; U.uLeak.value = leak;
+      U.uTime.value = t; U.uOn.value = on; U.uShut.value = shut; U.uCold.value = cold;
       const bright = on * lerp(1, 0.55, cold) * lerp(1, 0.75, shut * (1 - cold));
       glow.color.copy(GOLD).lerp(BLUE, cold);
       glow.intensity = 12 * bright * (0.94 + 0.06 * Math.sin(t * 55));

@@ -1,10 +1,31 @@
-// The drop (109.73-112.23): the music stops. One note falls through a shaft of light and lands on dark stone.
+// The house of cards (106.37-112.23): in a single shaft of light on dark stone, printed notes are stacked into a
+// tower, one tier on each hit; on the drum fill the last note is laid on top and creeps toward the edge; when the
+// music stops the whole house of cards collapses in slow motion, and the last note flutters down onto the ruins.
+// Flash safety: big notes, slow tumbles, no strobing (checked with tools/flash.py).
 import * as THREE from 'three';
+import { NoteCloud } from '../props/notes.js';
 import { normalFromHeight } from '../tex.js';
 import { bridgeNote, readableBothSides } from '../props/bridge-note.js';
-import { clamp, hash1, lerp, rng, smooth } from '../util.js';
+import { clamp, hash1, lerp, rng, smooth, easeOut } from '../util.js';
 
-export const DROP = { t0: 109.73, tLand: 111.93, top: 9.5, beamH: 26, beamR: 2.75 };
+// House of cards: notes (scale 0.8: 1.88 x 0.8) stand on their short edge in steep tents; a flat note bridges each
+// pair of tents and carries a tent of the next tier.
+export const HOC = { scale: 0.8, lean: (11 * Math.PI) / 180, tiers: 4, spacing: 1.0 };
+HOC.h = 2.35 * HOC.scale;                          // card height
+HOC.ridge = HOC.h * Math.cos(HOC.lean);            // tent height
+HOC.foot = HOC.h * Math.sin(HOC.lean);             // half the tent's footprint depth
+HOC.tier = HOC.ridge + 0.012;                      // one tier, including the flat note
+HOC.top = (HOC.tiers - 1) * HOC.tier + HOC.ridge;  // the apex ridge
+export const DROP = { t0: 109.73, tLand: 111.93, beamH: 26, beamR: 2.75, crownY: HOC.top + 0.012, land: [2.55, 0.03, 0.75] };
+// Hits measured from the master. The tiers land on the beat (tier 0 already stands when the shot opens); the last note
+// is laid on the apex on the second hit of the drum fill.
+export const BUILD = { tiers: [-1e9, 107.0, 107.667, 108.0], cap: 108.667, drop: 6.5, dur: 0.38 };
+// The drum fill: every hit shakes the tower; after the last note is laid, each hit nudges it toward the edge.
+export const FILL = [108.333, 108.667, 108.967, 109.133, 109.3, 109.467, 109.633];
+const CREEP_HITS = FILL.filter((h) => h > BUILD.cap + 0.1);
+const CREEP = 0.12; // how far each hit nudges the top note toward the edge
+// The collapse: slow-motion gravity (units/s^2) so the tumbles stay slow.
+export const FALL = { t0: 109.73, g: 5.5 };
 
 function canvas(w, h) {
   const c = document.createElement('canvas');
@@ -72,25 +93,44 @@ function sprite() {
   return new THREE.CanvasTexture(c);
 }
 
-// Falling-leaf motion: glide one way tilted into the motion, stall, turn, glide back.
+// The top note: it rests on the apex, creeps toward the edge on each hit of the fill, then (falling-leaf motion) tips
+// off, drifts forward clear of the tower, rocks gently and settles on the stone in front of it.
 export function notePose(t) {
-  const { t0, tLand, top } = DROP;
-  const T = tLand - t0;
-  const u = clamp((t - t0) / T);
-  const w = (Math.PI * 2) / 1.15;
-  const ph = (Math.min(t, tLand) - t0) * w + 0.6;
-  const damp = 1 - smooth(clamp((u - 0.82) / 0.18));
-  // descent: gentle ease in, slows as it nears the floor (air cushion)
-  const yLin = lerp(top, 0.03, u * (1.12 - 0.12 * u));
-  const y = t >= tLand ? 0.03 : yLin + Math.cos(2 * ph) * 0.12 * damp;
-  const x = Math.sin(ph) * 0.72 * damp + 0.1;
-  const z = Math.sin(ph * 0.5) * 0.25 * damp;
-  const roll = -Math.cos(ph) * 0.55 * damp;
-  const pitch = Math.sin(ph * 0.5 + 0.4) * 0.18 * damp;
-  const yaw = 0.35 + (Math.min(t, tLand) - t0) * 0.4;
-  // after landing: a tiny slide
-  const slide = t > tLand ? (1 - Math.exp(-(t - tLand) * 6)) * 0.12 : 0;
-  return { x: x + slide, y, z, roll, pitch, yaw, u };
+  const { t0, tLand, crownY, land } = DROP;
+  if (t < BUILD.cap - BUILD.dur) return { hidden: true, x: 0.1, y: crownY + BUILD.drop, z: 0, roll: 0, pitch: 0, yaw: 0, u: 0 };
+  if (t < t0) {
+    let creep = 0;
+    for (const h of CREEP_HITS) if (t >= h) creep += CREEP * easeOut(clamp((t - h) / 0.12), 2);
+    const arrive = BUILD.drop * (1 - easeOut(clamp((t - (BUILD.cap - BUILD.dur)) / BUILD.dur), 2.5));
+    return { x: 0.1 + creep, y: crownY + arrive, z: 0, roll: 0, pitch: 0, yaw: 0, u: 0 };
+  }
+  const x0 = 0.1 + CREEP * CREEP_HITS.length;
+  const u = clamp((t - t0) / (tLand - t0));
+  const tl = Math.min(t, tLand) - t0;
+  const ph = tl * ((Math.PI * 2) / 1.3);
+  const damp = Math.min(1, u * 5) * (1 - smooth(clamp((u - 0.78) / 0.22)));
+  const fall = u * u * (3 - 2 * u);
+  const y = t >= tLand ? land[1] : lerp(crownY, land[1], fall) + Math.cos(2 * ph) * 0.06 * damp;
+  // it drifts out to the right of the tower quickly, so it falls against the dark, not in front of the paper
+  const x = lerp(x0, land[0], easeOut(u, 3)) + Math.sin(ph) * 0.28 * damp;
+  const z = lerp(0, land[2], easeOut(u, 2.2));
+  const tip = -0.55 * Math.sin(Math.PI * clamp(u / 0.22)); // it tips over the edge, then levels out
+  const roll = tip - Math.cos(ph) * 0.3 * damp;
+  const pitch = Math.sin(ph * 0.5 + 0.4) * 0.14 * damp;
+  const yaw = tl * 0.35;
+  const slide = t > tLand ? (1 - Math.exp(-(t - tLand) * 6)) * 0.1 : 0;
+  return { x: x + slide, y, z, roll: t >= tLand ? 0 : roll, pitch: t >= tLand ? 0 : pitch, yaw, u };
+}
+
+// The tower sways a hair on each hit of the fill (a few pixels at most: no flicker).
+export function towerTremble(t) {
+  let r = 0;
+  for (let i = 0; i < FILL.length; i++) {
+    const a = t - FILL[i];
+    if (a < 0 || a > 0.8) continue;
+    r += Math.exp(-a * 7) * Math.sin(a * 22) * 0.0035;
+  }
+  return r;
 }
 
 export async function dropStage(film) {
@@ -103,6 +143,11 @@ export async function dropStage(film) {
   scene.add(lamp, lamp.target);
   const amb = new THREE.AmbientLight(0x1a1712, 0.35);
   scene.add(amb);
+  // A warm key from the front so the faces of the standing notes read (the top lamp only grazes them).
+  const key = new THREE.SpotLight(0xffe6c4, 0, 40, 0.42, 0.6, 1.1);
+  key.position.set(4.5, 9, 12);
+  key.target.position.set(0, 3.4, 0);
+  scene.add(key, key.target);
 
   const slab = slabTextures();
   slab.map.repeat.set(6, 6); slab.normal.repeat.set(6, 6);
@@ -144,6 +189,75 @@ export async function dropStage(film) {
   noteYaw.scale.setScalar(0.8);
   scene.add(noteYaw);
 
+  // The house of cards: tents of two leaning notes, a flat note bridging each pair of tents, four tiers.
+  const hocGroup = new THREE.Group();
+  scene.add(hocGroup);
+  const hoc = new NoteCloud(tex, 32, { emissive: 0.1, rough: 0.8 }); // a little self-light: no note turns black
+  hoc.setFlutter(0);
+  hocGroup.add(hoc);
+  const cards = [];
+  {
+    const { tiers, spacing, tier } = HOC;
+    let rank = 0;
+    for (let k = 0; k < tiers; k++) {
+      const n = tiers - k, y0 = k * tier;
+      for (let i = 0; i < n; i++) {
+        const x = (i - (n - 1) / 2) * spacing;
+        for (const s of [1, -1]) cards.push({ kind: 'stand', k, s, x, y0, id: cards.length, rank: rank++ });
+      }
+      if (k < tiers - 1) for (let j = 0; j < n - 1; j++) cards.push({ kind: 'flat', k, x: ((j + 0.5) - (n - 1) / 2) * spacing, y0, id: cards.length, rank: rank++ });
+    }
+  }
+  const AX = new THREE.Vector3(1, 0, 0), AY = new THREE.Vector3(0, 1, 0), AZ = new THREE.Vector3(0, 0, 1);
+  const qa = new THREE.Quaternion(), qb = new THREE.Quaternion(), qc = new THREE.Quaternion();
+  // Pose one card at time t (into the layout dummy). Returns false while it is not in the scene yet.
+  function cardPose(c, t, d) {
+    const { h, foot, ridge, lean } = HOC;
+    const arr = BUILD.tiers[c.k];
+    if (t < arr - BUILD.dur) return false;
+    const lift = BUILD.drop * (1 - easeOut(clamp((t - (arr - BUILD.dur)) / BUILD.dur), 2.5));
+    const h1 = hash1(c.id * 7 + 1), h2 = hash1(c.id * 7 + 2), h3 = hash1(c.id * 7 + 3), h4 = hash1(c.id * 7 + 4), h5 = hash1(c.id * 7 + 5);
+    const ts = FALL.t0 + 0.03 * c.k + 0.08 * h1;
+    const a = Math.max(0, t - ts);
+    const y1 = 0.004 + 0.011 * c.rank;                 // where it comes to rest on the pile
+    if (c.kind === 'stand') {
+      // The note stands on its bottom edge (the pivot). In the collapse the pivot drops and slides out while the note
+      // tips over outward and ends lying flat.
+      const g = FALL.g, fallH = Math.max(0, c.y0 - y1);
+      const Tf = fallH > 0 ? Math.sqrt((2 * fallH) / g) : 0;
+      const yP = Math.max(y1, c.y0 - 0.5 * g * a * a);
+      const e = easeOut(clamp(a / Math.max(Tf, 0.8)), 2);
+      const dx = (c.x === 0 ? h4 - 0.5 : Math.sign(c.x)) * (0.1 + 0.35 * h4) + (h5 - 0.5) * 0.4;
+      const dz = c.s * (0.25 + 0.5 * h2 + 0.15 * c.k);
+      // upper notes start tipping as soon as their support goes, and have finished tipping by the time they land
+      const Tr = Math.max(0.8 * Tf, 0.75 + 0.2 * h3);
+      const r = a > 0 ? Math.pow(clamp(a / Tr), 1.4) : 0;
+      const phi = lerp(-c.s * lean, c.s * (Math.PI / 2 - 0.04), r);
+      const yaw = (h3 - 0.5) * 0.6 * r;
+      const px = c.x + dx * e, py = yP + lift, pz = c.s * foot + dz * e;
+      const half = h / 2;
+      d.position.set(px + Math.sin(yaw) * Math.sin(phi) * half, py + Math.cos(phi) * half, pz + Math.cos(yaw) * Math.sin(phi) * half);
+      qa.setFromAxisAngle(AY, yaw); qb.setFromAxisAngle(AX, phi); qc.setFromAxisAngle(AZ, Math.PI / 2);
+      d.quaternion.copy(qa).multiply(qb).multiply(qc);
+    } else {
+      // A flat note on two ridges: when they go it drops, banking a little, and lands flat on the pile.
+      const yc0 = c.y0 + ridge + 0.006;
+      const g = FALL.g, fallH = Math.max(0, yc0 - y1);
+      const Tf = Math.sqrt((2 * fallH) / g);
+      const yc = Math.max(y1, yc0 - 0.5 * g * a * a);
+      const e = clamp(a / Tf);
+      const bank = Math.sin(Math.PI * e);
+      d.position.set(c.x + (h4 - 0.5) * 0.8 * easeOut(e, 2), yc + lift, (h5 - 0.5) * 1.4 * easeOut(e, 2));
+      qa.setFromAxisAngle(AY, (h2 - 0.5) * 0.9 * e);
+      qb.setFromAxisAngle(AZ, (h3 - 0.5) * 0.7 * bank);
+      qc.setFromAxisAngle(AX, -Math.PI / 2 + (h1 - 0.5) * 0.5 * bank);
+      d.quaternion.copy(qa).multiply(qb).multiply(qc);
+    }
+    d.scale.setScalar(HOC.scale);
+    return true;
+  }
+  const layoutHoc = (t) => hoc.layout(cards.length, (i, d) => cardPose(cards[i], t, d));
+
   // Soft contact shadow under the note (a hard shadow read as a black wedge).
   const blobTex = (() => {
     const c = canvas(128, 128), g = c.getContext('2d');
@@ -157,12 +271,17 @@ export async function dropStage(film) {
   scene.add(blob);
 
   const S = {
-    scene, lamp, beam, dust, floor, note, noteYaw, noteRoll, blob,
+    scene, lamp, key, beam, dust, floor, note, noteYaw, noteRoll, blob, hoc, hocGroup, cards,
     fx: { bloom: 0.35, threshold: 1.15, bloomRadius: 0.4, grain: 0.06, vignette: 0.6, tint: [1.02, 1.0, 0.96], sat: 0.85, shake: 0.0015 },
     notePose,
     update(ctx) {
       const t = ctx.t;
+      hocGroup.visible = true;
+      hocGroup.rotation.set(0, 0, t < FALL.t0 ? towerTremble(t) : 0);
+      layoutHoc(t);
+      key.intensity = 28;
       const q = notePose(t);
+      noteYaw.visible = !q.hidden;
       noteYaw.position.set(q.x, q.y, q.z);
       noteYaw.rotation.set(0, q.yaw, 0);
       noteRoll.rotation.set(q.pitch, 0, q.roll);
@@ -184,8 +303,8 @@ export async function dropStage(film) {
         a[i * 3 + 2] = Math.sin(ang) * r;
       }
       dust.geometry.attributes.position.needsUpdate = true;
-      lamp.intensity = 34;
-      beam.material.uniforms.uGain.value = 0.48;
+      lamp.intensity = 24;
+      beam.material.uniforms.uGain.value = 0.3;
     },
   };
   return S;

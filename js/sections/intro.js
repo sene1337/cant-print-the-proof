@@ -29,7 +29,10 @@ export function shots(S, T) {
     { bloom: 0.25, threshold: 1.2 });
   // 3. It rises on its edge and spins, catching every light in the room.
   S(3.3, 'gold', orbitCam({ target: [0, 1.1, 0], dist: [3.4, 2.9], az: [-10, 10], el: [3, 5], fov: 30 }),
-    (s, c) => { s.coin.position.set(0, 1.1, 0); s.coin.rotation.set(0, easeOut(c.u, 3) * Math.PI * 4 + 0.35, 0); s.floor.visible = false; });
+    // a slow half turn: the face catches the light once, never strobing
+    // (it turns from edge-on to face us and settles, flowing into the close-up; its back never shows)
+    (s, c) => { s.coin.position.set(0, 1.1, 0); s.coin.rotation.set(0, 0.35 - (1 - easeInOut(c.u)) * Math.PI / 2, 0); s.coin.setRelief(0.7); s.floor.visible = false; },
+    { bloom: 0.28, threshold: 1.15 });
   // 4. Macro: laurel and eye.
   S(4.6, 'gold', orbitCam({ target: [0, 1.1, 0], dist: [2.7, 2.35], az: [-20, 10], el: [4, 2], fov: 28 }),
     (s, c) => { s.coin.position.set(0, 1.1, 0); s.coin.rotation.set(0, 0.25 - c.lt * 0.3, 0); s.floor.visible = false; },
@@ -45,9 +48,10 @@ export function shots(S, T) {
   // 6. Spinning down like a coin on a table.
   S(7.233, 'gold', orbitCam({ target: [0, 0.08, 0], dist: [3.0, 2.6], az: [0, 40], el: [62, 56], fov: 32 }),
     (s, c) => {
-      const wob = 0.2 * Math.exp(-c.lt * 0.8);
+      // slow wobble and turn, so its face never flickers (under three swings a second)
+      const wob = 0.16 * Math.exp(-c.lt * 0.8);
       s.coin.position.set(0, 0.09 + wob * 0.8, 0);
-      s.coin.rotation.set(-Math.PI / 2 + Math.sin(c.lt * 9) * wob, 0, c.lt * 5);
+      s.coin.rotation.set(-Math.PI / 2 + Math.sin(c.lt * 5.5) * wob, 0, c.lt * 1.4);
     });
   // 7. Settled. Push in, then black.
   S(8.533, 'gold', orbitCam({ target: [0, 0.09, 0], dist: [2.6, 2.0], az: [0, 20], el: [80, 88], fov: 30 }),

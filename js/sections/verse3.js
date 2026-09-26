@@ -49,26 +49,29 @@ export function shots(S, T) {
   // ---- The paper-to-proof choreography (shared by the next two shots).
   const tm = {
     drop0: 124.25, dropStep: 0.118, fall: 0.42,
-    burn0: 126.98, burnDur: 0.34, proof: W('proof.', 127),
+    burn0: 126.84, burnDur: 0.4, proof: W('proof.', 127),
     fly: [],
   };
   const BASE = [1, 3, 5, 6], WALLS = [8, 2, 7, 4]; // walls fly back to front
-  BASE.forEach((k, j) => { tm.fly[k] = { t0: 125.94 + j * 0.05, dur: 0.26, lift: 0.25 + j * 0.12 }; });
-  WALLS.forEach((k, j) => { tm.fly[k] = { t0: 126.06 + j * 0.09, dur: 0.4, lift: 0.7 }; });
-  tm.fly[0] = { t0: 126.56, dur: 0.36, lift: 0.8 };
+  // one calm gathering: base pages glide in together, the four walls rise together, the title page settles as the lid
+  BASE.forEach((k, j) => { tm.fly[k] = { t0: 125.94 + j * 0.03, dur: 0.3, lift: 0.1 + j * 0.05 }; });
+  WALLS.forEach((k, j) => { tm.fly[k] = { t0: 125.98 + j * 0.03, dur: 0.44, lift: 0.18 }; });
+  tm.fly[0] = { t0: 126.3, dur: 0.22, lift: 0 };
 
   // ---- 124.62 "dropped nine pages": they fall out of the dark and land in a ring.
   S(W('dropped'), 'verse3-paper', orbitCam({ target: [0, 0.35, 0], dist: [9.4, 9.0], az: [14, 30], el: [36, 60], fov: 38, ease: easeInOut }),
     (s, c) => { s.pagesAt(c.t, tm); });
 
   // ---- 125.93 "no pitch, no promise, just proof": the pages fold into a cube; the paper burns off; proof.
-  S(beatAfter(W('pages,')), 'verse3-paper', orbitCam({ target: [0, 0.5, 0], dist: [6.4, 2.7], az: [30, 16], el: [44, 17], fov: 34, ease: easeOut }),
+  S(beatAfter(W('pages,')), 'verse3-paper', orbitCam({ target: [0, 0.5, 0], dist: [4.7, 3.6], az: [26, 16], el: [28, 15], fov: 34, ease: easeInOut }),
     (s, c) => { s.pagesAt(c.t, tm); s.cone.visible = false; },
     { bloom: 0.6 });
 
-  // ---- 127.48 "Solved the double-spend": the coin tries to be two; one copy shatters, one holds.
-  S(W('Solved'), 'verse3-coin', orbitCam({ target: [0, 1.5, 0], dist: [6.0, 4.9], az: [-10, 4], el: [7, 3], fov: 32 }),
-    (s, c) => { s.doubleSpend(c.t, { tSplit: beatAfter(W('Solved')), tFail: W('double-spend,') }); });
+  // ---- 127.87 "Solved the double-spend": the proof block holds through "Solved"; on the beat the coin tries to be two,
+  // one copy shatters on "double-spend", one holds.
+  const tDouble = beatAfter(W('Solved'));
+  S(tDouble, 'verse3-coin', orbitCam({ target: [0, 1.5, 0], dist: [5.75, 5.55], az: [-3, 2], el: [5, 4], fov: 32 }),
+    (s, c) => { s.doubleSpend(c.t, { tSplit: tDouble + 0.02, tFail: W('double-spend,') }); });
 
   // ---- 128.74 "took the bank out the middle": a marble bank stands on a trapdoor; the floor drops it into the dark,
   // slams shut on "middle", and the orange coin rolls over to stop where the bank stood.
@@ -117,21 +120,18 @@ export function shots(S, T) {
     cam.fov = 38;
   }, null, { bloom: 0.6 });
 
-  // ---- 142.88 "Every four years the new coins get cut in half": a stack of 50 is cut to 25, 12.5, 6.25 on the beats.
+  // ---- 142.88 "Every four years the new coins get cut in half": a stack of 50 is cut to 25, 12.5, 6.25 and 3.125
+  // (the reward since the 2024 halving: "now"). Two cuts on the beats, then on the sung words "coins" and "cut".
   const tEvery = W('Every');
-  const cuts = [beatAfter(W('years') - 0.1), beatAfter(W('coins') - 0.1), beatAfter(W('cut') - 0.2)];
-  const stackH = (t) => {
-    const hs = [5, 2.5, 1.25, 0.625].map((x) => x * HT * 10);
-    let h = hs[0];
-    cuts.forEach((c, i) => { h = lerp(h, hs[i + 1], smooth(clamp((t - c - 0.15) / 0.6))); });
-    return h;
-  };
+  const cuts = [beatAfter(tEvery), beatAfter(beatAfter(tEvery)), W('coins', 144), W('cut', 145)];
+  // The camera holds still in height and distance (the stack's rim stripes must not slide past it: flash safety);
+  // it only drifts around the stack, which looks the same from every side.
   S(tEvery, 'verse3-halving', (c, cam) => {
-    const h = stackH(c.t);
     const z = aspectZoom(c);
-    const target = [0, PLINTH + h * 0.5 - 0.3 - 0.15 * (1 - h / 5), 0];
-    const d = (3.2 + h * 1.75) * z;
-    const az = ((20 + c.lt * 4) * Math.PI) / 180, el = ((10 + (1 - h / 5) * 12) * Math.PI) / 180;
+    // the 50-stack runs out of the top of the frame; each cut brings the top down into view
+    const target = [0, 2.0, 0];
+    const d = 7.9 * z;
+    const az = ((18 + c.lt * 3) * Math.PI) / 180, el = (9 * Math.PI) / 180;
     cam.position.set(target[0] + d * Math.sin(az) * Math.cos(el), target[1] + d * Math.sin(el), target[2] + d * Math.cos(az) * Math.cos(el));
     cam.lookAt(...target);
     cam.fov = 32;
@@ -142,7 +142,7 @@ export function shots(S, T) {
   const tTwenty = W('twenty-one', 145.5);
   const pours = [beatAfter(tTwenty), W('million,', 146), W('go', 146.5), W('on,', 147), W('do', 147.5), 148.0, W('the', 148), W('math.')];
   S(tTwenty, 'verse3-halving', (c, cam) => {
-    const k = easeInOut(c.u), k2 = Math.pow(c.u, 1.5);
+    const k = easeInOut(c.u), k2 = smooth(c.u);
     const z = aspectZoom(c);
     // end looking down at the brim: the molten surface a sliver below it, the etching just beneath
     const target = [0, lerp(1.72, TANK.y0 + TANK.h - 0.12, k2), 0.15 * k2];

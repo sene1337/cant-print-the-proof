@@ -1,9 +1,10 @@
 // VERSE 2 fiat: the dollar chained to a gold bar; the chain snaps and the note floats free. Then the note
-// erodes away until only five percent is left, and a paper guillotine set to "2 %" takes a sliver on every beat.
+// erodes away until only five percent is left.
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { studioEnv } from '../film.js';
-import { banknote } from '../tex.js';
+import { banknote, noteExtras } from '../tex.js';
+import { readableBothSides, paperShading } from '../props/notes.js';
 import { Dust } from '../props/dust.js';
 import { clamp, lerp, hash1, rng, noise1, easeIn, easeOut, easeInOut } from '../util.js';
 import {
@@ -11,14 +12,10 @@ import {
   SoftPoints, pointScale, canvas2d, canvasTex,
 } from '../props/verse2-kit.js';
 import { barGeometry, stamp } from './verse2-bar.js';
-import { buildShears } from './verse2-coins.js';
 
 export const NW = 2.35, NH = 1.0;
 const NLINK = 10, BREAK = 5, PITCH = 0.15;
 export const CHAIN_NOTE_SCALE = 0.85;
-export const CUT_X = 0.9;       // the shears' cutting line
-export const TABLE_Y = 0.9;     // top of the block the note lies on
-export const SLIVER = 0.075;    // width of each sliver (world units, about 3 percent of the note)
 
 function flutterGeo() {
   return new THREE.PlaneGeometry(NW, NH, 28, 12);
@@ -28,33 +25,11 @@ function flutter(geo, base, t, amp, seed = 0) {
   const p = geo.attributes.position;
   for (let i = 0; i < p.count; i++) {
     const x = base[i * 3], y = base[i * 3 + 1];
-    p.setZ(i, amp * (Math.sin(x * 1.9 + t * 3.1 + seed) * 0.07 + Math.sin(y * 2.7 + t * 2.3 + seed * 2) * 0.035) * (0.4 + Math.abs(x) / NW));
+    p.setZ(i, amp * (Math.sin(x * 1.9 + t * 3.1 + seed) * 0.07 + Math.sin(y * 2.7 + t * 2.3 + seed * 2) * 0.035) * (0.4 + Math.abs(x) / NW)
+      + 0.05 * (x / (NW / 2)) ** 2);   // a gentle curl
   }
   p.needsUpdate = true;
   geo.computeVertexNormals();
-}
-
-function brassPlate() {
-  const [c, g] = canvas2d(512, 200);
-  const gr = g.createLinearGradient(0, 0, 512, 200);
-  gr.addColorStop(0, '#b8923f'); gr.addColorStop(0.5, '#e2c27a'); gr.addColorStop(1, '#9c7a32');
-  g.fillStyle = gr; g.fillRect(0, 0, 512, 200);
-  g.strokeStyle = 'rgba(60,40,10,0.8)'; g.lineWidth = 6; g.strokeRect(10, 10, 492, 180);
-  g.fillStyle = '#2a1c08'; g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.font = '900 150px "Playfair Display"';
-  g.fillText('2 %', 256, 108);
-  for (const [x, y] of [[30, 30], [482, 30], [30, 170], [482, 170]]) {
-    g.fillStyle = '#6b5222'; g.beginPath(); g.arc(x, y, 8, 0, Math.PI * 2); g.fill();
-  }
-  return canvasTex(c);
-}
-
-function matTexture() {
-  const [c, g] = canvas2d(1024, 512);
-  g.fillStyle = '#1d2422'; g.fillRect(0, 0, 1024, 512);
-  for (let x = 0; x <= 1024; x += 32) { g.fillStyle = x % 160 === 0 ? 'rgba(170,210,190,0.28)' : 'rgba(170,210,190,0.1)'; g.fillRect(x, 0, 2, 512); }
-  for (let y = 0; y <= 512; y += 32) { g.fillStyle = y % 160 === 0 ? 'rgba(170,210,190,0.28)' : 'rgba(170,210,190,0.1)'; g.fillRect(0, y, 1024, 2); }
-  return canvasTex(c);
 }
 
 export async function fiatStage(film) {
@@ -84,14 +59,21 @@ export async function fiatStage(film) {
   scene.add(fillL);
 
   const field = noiseField(256, 57);
-  const noteTex = await banknote({ seed: 5, serial: 'F 1971 0815 A' });
+  const noteTex = await banknote({ seed: 5, serial: 'F 1971 0815 A', res: 2 });
 
   // The dollar.
   const noteGeo = flutterGeo();
   const noteBase = Float32Array.from(noteGeo.attributes.position.array);
   const U = burnUniforms(field, { mode: 1, noiseAmp: 0.07, noiseScale: 2.2, charW: 0.025, charCol: [0.32, 0.38, 0.35], emberW: 0.012, emberGain: 2.6, emberCol: [0.55, 1.0, 0.72] });
-  const noteMat = new THREE.MeshStandardMaterial({ map: noteTex, roughness: 0.75, side: THREE.DoubleSide, emissive: new THREE.Color(1, 1, 1), emissiveMap: noteTex, emissiveIntensity: 0.06 });
+  // paper: ink relief, a soft sheen, light through the sheet (burn patch first, then the paper shading)
+  const noteMat = new THREE.MeshPhysicalMaterial({
+    map: noteTex, roughness: 0.75, side: THREE.DoubleSide, emissive: new THREE.Color(1, 1, 1), emissiveMap: noteTex, emissiveIntensity: 0.06,
+    normalMap: noteExtras(noteTex).normalMap, normalScale: new THREE.Vector2(0.55, 0.55),
+    sheen: 0.3, sheenRoughness: 0.6, sheenColor: new THREE.Color(0.92, 0.96, 0.92),
+  });
   patchBurn(noteMat, U);
+  const paperU = { uTranslucency: { value: 0.35 } };
+  patch(noteMat, 'paper', (sh) => { readableBothSides(sh); paperShading(sh, paperU); });
   const note = new THREE.Mesh(noteGeo, noteMat);
   note.castShadow = true;
   scene.add(note);
@@ -132,60 +114,6 @@ export async function fiatStage(film) {
     flakeSeeds.push({ u, v, f: burnFieldJS(field, U, u, v) });
   }
 
-  // The trim: the same shears that clipped the gold coin, now taking a sliver off a bank note on every beat.
-  const trim = new THREE.Group();
-  scene.add(trim);
-  const lacq = new THREE.MeshPhysicalMaterial({ color: 0x050706, roughness: 0.35, clearcoat: 0.8, clearcoatRoughness: 0.15, envMapIntensity: 0.4 });
-  const block = new THREE.Mesh(new RoundedBoxGeometry(3.2, TABLE_Y, 1.9, 3, 0.03), lacq);
-  block.position.set(CUT_X - 0.1 - 1.6, TABLE_Y / 2, 0);
-  block.receiveShadow = true;
-  trim.add(block);
-  const shears = buildShears();
-  shears.group.scale.setScalar(0.8);
-  trim.add(shears.group);
-  const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 2.6, 12), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.8, 1, 0.88).multiplyScalar(3) }));
-  tube.rotation.x = Math.PI / 2;
-  tube.position.set(CUT_X - 0.9, TABLE_Y + 2.3, 0);
-  trim.add(tube);
-  const fluor = new THREE.SpotLight(0xd6f5e2, 9, 12, 0.55, 0.6, 2);
-  fluor.position.set(CUT_X - 0.9, TABLE_Y + 2.25, 0.1);
-  fluor.target.position.set(CUT_X - 0.2, TABLE_Y, 0);
-  fluor.castShadow = true;
-  fluor.shadow.mapSize.set(2048, 2048);
-  fluor.shadow.bias = -0.0003;
-  scene.add(fluor, fluor.target);
-  // a back light so the shears' silhouette and edges read against the dark
-  const rimG = new THREE.DirectionalLight(0xe8fff2, 0);
-  rimG.position.set(-4, 3.5, -3);
-  scene.add(rimG);
-
-  // the note on the block, clipped to what is left; the slivers that fall
-  const bedMat = new THREE.MeshStandardMaterial({ map: noteTex, roughness: 0.8, side: THREE.DoubleSide });
-  const cutU = { value: 1 };
-  patch(bedMat, 'cutoff', (sh) => {
-    sh.uniforms.uCutU = cutU;
-    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vCutUv;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvCutUv = uv;');
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec2 vCutUv; uniform float uCutU;')
-      .replace('#include <map_fragment>', '#include <map_fragment>\nif (vCutUv.x > uCutU) discard;');
-  });
-  const bedNote = new THREE.Mesh(new THREE.PlaneGeometry(NW, NH, 8, 2), bedMat);
-  bedNote.rotation.x = -Math.PI / 2;
-  bedNote.receiveShadow = true;
-  bedNote.castShadow = true;
-  trim.add(bedNote);
-  const slivers = [];
-  for (let k = 0; k < 6; k++) {
-    const g = new THREE.PlaneGeometry(SLIVER, NH, 1, 6);
-    const uv = g.attributes.uv;
-    const u1 = 1 - (k * SLIVER) / NW, u0 = 1 - ((k + 1) * SLIVER) / NW;
-    for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) < 0.5 ? u0 : u1);
-    const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ map: noteTex, roughness: 0.8, side: THREE.DoubleSide }));
-    m.castShadow = true;
-    trim.add(m);
-    slivers.push(m);
-  }
-
   const dust = new Dust({ count: 700, size: 0.01, box: [8, 5, 8], color: [0.8, 1, 0.88], gain: 0.7 });
   dust.position.set(0, 1.5, 0);
   scene.add(dust);
@@ -194,7 +122,7 @@ export async function fiatStage(film) {
   const X_AX = new THREE.Vector3(1, 0, 0), Z_AX = new THREE.Vector3(0, 0, 1);
 
   const S = {
-    scene, note, noteMat, U, bar, links, anchor, sparks, flakes, trim, shears, bedNote, slivers, cool, warm, fluor, rimG, floor, dust,
+    scene, note, noteMat, U, bar, links, anchor, sparks, flakes, cool, warm, floor, dust,
     fx: { bloom: 0.6, threshold: 0.95, bloomRadius: 0.45, grain: 0.05, vignette: 0.6, tint: [0.95, 1.03, 0.98] },
 
     // S15: the note tethered to the bar; the chain breaks at tBreak and the note rises.
@@ -295,49 +223,10 @@ export async function fiatStage(film) {
         const sz = (0.035 + h(8) * 0.05) * (1 - clamp((a - 1.1) / 0.7));
         d.scale.set(sz, sz * (0.5 + h(9) * 0.6), 1);
         rect[0] = s.u - 0.012; rect[1] = s.v - 0.02; rect[2] = 0.024; rect[3] = 0.04;
-        glow[0] = 1.2 * Math.exp(-a * 8);
-        glow[1] = 0.1 + 0.3 * clamp(a);
-      });
-    },
-
-    // S17/S18: the shears trim the note. cuts: song times the blades close; t0: when the shears slide in.
-    trimAt(t, cuts, t0) {
-      trim.visible = true;
-      note.visible = false;
-      floor.material.clearcoat = 0; // matte, so the overhead light does not wash the background
-      floor.material.roughness = 0.95;
-      let done = 0;
-      for (const c of cuts) if (t >= c) done++;
-      // feed: the note slides out one sliver width after each snip
-      let feed = 0;
-      cuts.forEach((c, k) => { if (k < cuts.length - 1) feed += SLIVER * easeInOut(clamp((t - c - 0.16) / 0.22)); });
-      cutU.value = 1 - (done * SLIVER) / NW;
-      const rightX = CUT_X + SLIVER + feed - done * SLIVER;
-      bedNote.position.set(rightX + done * SLIVER - NW / 2, TABLE_Y + 0.004, 0);
-      // shears: slide in, open, snap shut on each cut
-      let close = 0;
-      for (const c of cuts) {
-        const a = t - c;
-        if (a > -0.13 && a <= 0) close = Math.max(close, easeIn(1 + a / 0.13, 2));
-        else if (a > 0 && a < 0.3) close = Math.max(close, a < 0.06 ? 1 : 1 - easeOut((a - 0.06) / 0.24, 2));
-      }
-      const open = (1 - close) * 17 * Math.PI / 180;
-      shears.upper.rotation.z = open;
-      shears.lower.rotation.z = -open;
-      const approach = 1 - easeOut(clamp((t - t0) / 0.45), 2.2);
-      shears.group.position.set(CUT_X + approach * 1.2, TABLE_Y + 0.006, -0.86 - approach * 1.4);
-      shears.group.rotation.set(0, -Math.PI / 2, 0);
-      slivers.forEach((m, k) => {
-        const c = cuts[k];
-        m.visible = c !== undefined && t >= c;
-        if (!m.visible) return;
-        const a = t - c;
-        const fall = 0.5 * 9 * a * a;
-        const tip = Math.min(Math.PI / 2 + 0.3, a * 6);
-        m.position.set(CUT_X + SLIVER / 2 + a * 0.3, TABLE_Y + 0.006 - fall, Math.sin(a * 5 + k) * 0.05);
-        // lying flat, then tipping off the cut edge about the cutting line (world z), fluttering
-        q.setFromAxisAngle(Z_AX, -tip).multiply(new THREE.Quaternion().setFromAxisAngle(X_AX, -Math.PI / 2 + Math.sin(a * 9 + k) * 0.3 * clamp(a * 3)));
-        m.quaternion.copy(q);
+        // flash safety: a short, dim glow as each flake breaks off, then it darkens to ash within half a second,
+        // so bright flakes never stream across the dark
+        glow[0] = 0.55 * Math.exp(-a * 9);
+        glow[1] = 0.15 + 0.55 * clamp(a / 0.5);
       });
     },
 
@@ -345,16 +234,13 @@ export async function fiatStage(film) {
       note.visible = false;
       note.scale.setScalar(1);
       clip.visible = true;
-      rimG.intensity = 0;
       bar.visible = false; anchor.visible = false; links.visible = false;
       sparks.visible = false;
       flakes.visible = false;
-      trim.visible = false;
       U.uBurn.value = -1;
       U.uTime.value = ctx.t;
       warm.intensity = 0;
       cool.intensity = 1.6;
-      fluor.intensity = 0;
       floor.visible = true;
       floor.material.clearcoat = 0.4;
       floor.material.roughness = 0.4;

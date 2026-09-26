@@ -6,10 +6,9 @@ import { studioEnv } from '../film.js';
 import { loadImage, TEX } from '../tex.js';
 import { clamp, hash1, lerp, easeOut, smooth } from '../util.js';
 import { hangingCowrie, cowrieEnv } from '../props/verse1-cowrie.js';
-import { raiGeometry, raiMaterial } from '../props/verse1-rai.js';
+import { raiGeometry, raiMaterial, raiTextures } from '../props/verse1-rai.js';
 import { palmGeometry } from '../props/verse1-palm.js';
 import { canoe as makeCanoe } from '../props/verse1-canoe.js';
-import { cuppedHandGeometry } from '../props/verse1-hand.js';
 
 const HORIZON = new THREE.Color(0.02, 0.058, 0.068);
 const ZENITH = new THREE.Color(0.001, 0.0035, 0.008);
@@ -98,6 +97,7 @@ function seaMaterial(U) {
         float spark = mix(1.0, sp, resS);
         refl += uMoonCol * uGlint * path * spark;
         vec3 col = mix(uWater, refl, F);
+        col = min(col, vec3(4.0)); // no single glint may flare the bloom
         float fog = 1.0 - exp(-dist / uFogDist);
         col = mix(col, uFogCol, fog);
         gl_FragColor = vec4(col, 1.0);
@@ -180,15 +180,30 @@ function crystalGeometry(kind, seed) {
 function saltPour(env) {
   const N = 3300, KINDS = 3;
   const group = new THREE.Group();
-  // Backlit salt glows: a soft white self-light for the scattered light inside, glassy facets on top.
-  const mat = new THREE.MeshPhysicalMaterial({
-    color: 0xeef2f1, roughness: 0.12, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.05,
-    emissive: new THREE.Color(0.34, 0.37, 0.37), sheen: 1, sheenRoughness: 0.3, sheenColor: new THREE.Color(0.9, 0.95, 0.95),
-    envMap: env, envMapIntensity: 1.2, specularIntensity: 1, flatShading: true,
+  const backWorld = new THREE.Vector3(0, 0.2, -1).normalize();
+  // Salt is translucent white: with the moon behind it the crystals glow from inside, brightest at their edges.
+  // Highlights are kept broad and every pixel is capped, so no single facet can flare the bloom for one frame.
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0xe4e9e8, roughness: 0.5, metalness: 0, envMap: env, envMapIntensity: 0.55, flatShading: true,
+    emissive: new THREE.Color(0.08, 0.09, 0.095),
   });
+  const backU = { uBackDir: { value: new THREE.Vector3(0, 0, -1) }, uBackCol: { value: new THREE.Color(0.85, 0.93, 0.95) }, uClamp: { value: 2.2 } };
+  mat.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, backU);
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform vec3 uBackDir, uBackCol; uniform float uClamp;')
+      .replace('#include <opaque_fragment>', `
+        float back = pow(max(dot(-geometryViewDir, uBackDir), 0.0), 3.0);
+        float edge = 1.0 - abs(dot(normal, geometryViewDir));
+        outgoingLight += uBackCol * back * (0.35 + 0.9 * edge) * diffuseColor.rgb;
+        outgoingLight = min(outgoingLight, vec3(uClamp));
+        #include <opaque_fragment>`);
+  };
   const meshes = [];
   for (let k = 0; k < KINDS; k++) {
     const m = new THREE.InstancedMesh(crystalGeometry(k, 71 + k * 997), mat, Math.ceil(N / KINDS));
+    // the backlight direction is set in view space at draw time, from the camera actually used
+    m.onBeforeRender = (r, sc, camera) => { backU.uBackDir.value.copy(backWorld).transformDirection(camera.matrixWorldInverse); };
     m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     m.frustumCulled = false;
     m.castShadow = true;
@@ -199,13 +214,71 @@ function saltPour(env) {
     meshes.push(m);
   }
   const mesh = meshes[0];
-  const coneMat = new THREE.MeshStandardMaterial({ map: saltTex(), normalMap: saltNormal(), normalScale: new THREE.Vector2(1.6, 1.6), color: 0xd9dfdd, roughness: 0.45, envMap: env, envMapIntensity: 0.6, emissive: new THREE.Color(0.06, 0.065, 0.065) });
+  const coneMat = new THREE.MeshStandardMaterial({ map: saltTex(), normalMap: saltNormal(), normalScale: new THREE.Vector2(1.2, 1.2), color: 0xeef2f1, roughness: 0.55, envMap: env, envMapIntensity: 0.55, emissive: new THREE.Color(0.2, 0.215, 0.22) });
   const cone = new THREE.Mesh(new THREE.ConeGeometry(1, 1, 96, 1, true), coneMat);
   cone.receiveShadow = true;
   group.add(cone);
+  // The falling salt: one continuous stream of fine grains, drawn on a ribbon that turns to face the camera.
+  // Each grain follows free fall (it is identified by its release time), so the stream thins and speeds up as it
+  // falls. Grains are much smaller than a tenth of the frame, so no patch of the stream flickers as they pass.
+  const streamU = {
+    uTime: { value: 0 }, uH: { value: 0.3 }, uG: { value: 2.2 }, uHeap: { value: 0 }, uW: { value: 0.01 },
+    uColor: { value: new THREE.Color(0.9, 0.95, 0.96) }, uGain: { value: 1.05 },
+  };
+  const stream = new THREE.Mesh(new THREE.PlaneGeometry(1, 1, 1, 64), new THREE.ShaderMaterial({
+    uniforms: streamU, transparent: true, depthWrite: false,
+    vertexShader: /* glsl */ `
+      uniform float uH, uHeap, uW;
+      varying vec2 vUv; varying float vY;
+      void main() {
+        vUv = uv;
+        float y = mix(uHeap, uH, uv.y);
+        vY = y;
+        // narrow at the pour, a little wider as it falls and fans out
+        float w = uW * (0.55 + 0.75 * (1.0 - uv.y));
+        vec3 p = vec3((uv.x - 0.5) * w * 2.2, y, 0.0);
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+      }`,
+    fragmentShader: /* glsl */ `
+      uniform float uTime, uH, uG, uGain;
+      uniform vec3 uColor;
+      varying vec2 vUv; varying float vY;
+      float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+      // one layer of round grains: columns across the stream, rows by release time (so they fall correctly)
+      float grains(float x, float rel, float cols, float rows, float seed) {
+        vec2 q = vec2(x * cols, rel * rows);
+        q.x += 0.5 * mod(floor(q.y), 2.0);
+        vec2 c = floor(q), f = fract(q) - 0.5;
+        vec2 o = (vec2(hash12(c + seed), hash12(c + seed + 3.7)) - 0.5) * 0.5;
+        float r = 0.22 + 0.16 * hash12(c + seed + 9.1);
+        return step(0.35, hash12(c + seed + 1.3)) * smoothstep(r, r * 0.4, length(f - o)) * (0.6 + 0.4 * hash12(c + seed + 5.5));
+      }
+      void main() {
+        float fallT = sqrt(max(0.0, 2.0 * (uH - vY) / uG));
+        float rel = uTime - fallT;                 // when the grains here were released
+        float x = (vUv.x - 0.5) * 2.2;             // across the stream
+        // a slightly ragged silhouette that stays put (nothing blinks at the edges)
+        float e1 = hash12(vec2(floor(vY * 160.0), 7.0)), e2 = hash12(vec2(floor(vY * 160.0) + 1.0, 7.0));
+        float edge = 0.6 + 0.25 * mix(e1, e2, smoothstep(0.0, 1.0, fract(vY * 160.0)));
+        float core = smoothstep(edge, edge * 0.1, abs(x));
+        float g = max(grains(vUv.x, rel, 22.0, 2600.0, 0.0), grains(vUv.x, rel, 31.0, 3300.0, 17.0));
+        float a = core * (0.42 + 0.5 * g);
+        // the top runs out of frame; the foot runs right into the heap
+        a *= smoothstep(1.0, 0.92, vUv.y);
+        gl_FragColor = vec4(uColor * uGain * (0.8 + 0.35 * g), a);
+      }`,
+  }));
+  stream.frustumCulled = false;
+  stream.onBeforeRender = (r, sc, camera) => {
+    // turn about the vertical to face the camera
+    const wp = new THREE.Vector3().setFromMatrixPosition(group.matrixWorld);
+    stream.rotation.y = Math.atan2(camera.position.x - wp.x, camera.position.z - wp.z);
+    stream.updateMatrixWorld(true);
+  };
+  group.add(stream);
   const dummy = new THREE.Object3D();
   const TAN = Math.tan((33 * Math.PI) / 180);
-  const P = { rate: 1100, H: 0.3, g: 2.2, hmax: 0.058, nmax: 3200, smin: 0.0036, sadd: 0.0036, spread: 0.018 };
+  const P = { rate: 1100, H: 0.3, g: 2.2, hmax: 0.058, nmax: 3200, smin: 0.0036, sadd: 0.0036, spread: 0.018, stream: false };
   const hOf = (n) => P.hmax * Math.cbrt(clamp(n / P.nmax, 0, 1));
   const pose = (tau) => {
     const landed = Math.max(0, (tau - 0.33) * P.rate);
@@ -216,6 +289,13 @@ function saltPour(env) {
     cone.position.y = (hNow * 0.9) / 2;
     const counts = [0, 0, 0];
     const spawned = Math.min(N, Math.floor(tau * P.rate));
+    streamU.uTime.value = tau; streamU.uH.value = P.H; streamU.uG.value = P.g;
+    // The foot of the stream goes into the heap: the cone's tip is at 0.9 h, and the foot sits just deep enough below it
+    // that the cone's slopes hide the ribbon's flat bottom edge (its grains reach 1.3 * 0.85 * uW each side there).
+    // So the stream meets the pile, with no gap above the tip.
+    const footHalf = 1.3 * 0.85 * P.spread * 0.5;
+    streamU.uHeap.value = Math.max(0, hNow * 0.9 - footHalf * TAN * 1.2); streamU.uW.value = P.spread * 0.5;
+    stream.visible = P.stream;
     for (let i = 0; i < spawned; i++) {
       const ti = i / P.rate;
       const age = tau - ti;
@@ -228,19 +308,33 @@ function saltPour(env) {
       const yLand = hl + s * 0.3;
       const tf = Math.sqrt((2 * Math.max(0, P.H - yLand)) / P.g);
       const e1 = hash1(i * 11 + 6) * 6.28, e2 = hash1(i * 11 + 7) * 6.28, e3 = hash1(i * 11 + 8) * 6.28;
-      const sp = 4 + hash1(i * 11 + 9) * 8;
+      const sp = 1.2 + hash1(i * 11 + 9) * 2.2;
       let x, y, z, spin;
       if (age < tf) {
+        if (P.stream) continue; // in the air: drawn by the stream ribbon
         x = ox * (1 + age * 1.5); z = oz * (1 + age * 1.5);
         y = P.H - 0.5 * P.g * age * age;
         spin = age;
       } else {
-        const kk = easeOut(clamp((age - tf) / 0.16), 2.5);
+        const kk = easeOut(clamp((age - tf) / 0.3), 2);
         const fx = Math.cos(th) * fr * Rl, fz = Math.sin(th) * fr * Rl;
         const fy = Math.max(0, hl - fr * Rl * TAN) + s * 0.35;
-        // buried crystals are skipped
-        const surfNow = Math.max(0, hNow - Math.hypot(fx, fz) * TAN);
-        if (kk >= 1 && fy < surfNow - s * 3.2) continue;
+        if (P.stream) {
+          // settle in place: the grain rolls the last little way into its spot and grows in, no long slide
+          const kIn = smooth((age - tf) / 0.25);
+          const coneSurf = 0.9 * hNow - Math.hypot(fx, fz) * TAN;
+          if (kIn >= 1 && fy + s * 1.3 < coneSurf) continue;
+          dummy.position.set(fx * (0.85 + 0.15 * kIn), fy + s * 2.5 * (1 - kIn), fz * (0.85 + 0.15 * kIn));
+          dummy.rotation.set(e1 + tf * sp, e2 + tf * sp * 0.7, e3);
+          dummy.scale.setScalar(s * 1.15 * (0.3 + 0.7 * kIn));
+          dummy.updateMatrix();
+          const kind = i % KINDS;
+          meshes[kind].setMatrixAt(counts[kind]++, dummy.matrix);
+          continue;
+        }
+        // crystals are hidden only once the cone's surface has risen right over them (no popping)
+        const coneSurf = 0.9 * hNow - Math.hypot(fx, fz) * TAN;
+        if (kk >= 1 && fy + s * 1.3 < coneSurf) continue;
         x = lerp(ox * (1 + tf * 1.5), fx, kk); z = lerp(oz * (1 + tf * 1.5), fz, kk);
         y = lerp(yLand, fy, kk) + Math.sin(kk * Math.PI) * s * 1.2;
         spin = tf + 0.08 * kk;
@@ -254,7 +348,7 @@ function saltPour(env) {
     }
     for (let q = 0; q < KINDS; q++) { meshes[q].count = counts[q]; meshes[q].instanceMatrix.needsUpdate = true; }
   };
-  return { group, mesh, meshes, cone, pose, mat, P };
+  return { group, mesh, meshes, cone, pose, mat, P, backWorld, backU, stream, streamU };
 }
 
 function islandTerrain() {
@@ -381,21 +475,27 @@ export async function seaStage(film) {
   const cowrie = hangingCowrie({ length: 0.26, cord: 2.5, env: cowrieEnv(film.renderer) });
   scene.add(cowrie.group);
 
-  // Salt on a dark wet rock.
+  // Salt pours onto a slab of wet black rock at the waterline.
   const salt = saltPour(env);
-  const rockMat = new THREE.MeshStandardMaterial({ color: 0x07090a, roughness: 0.85, envMap: env, envMapIntensity: 0.3 });
-  const rock = new THREE.Mesh(new THREE.CylinderGeometry(6, 6.5, 0.4, 96, 1), rockMat);
-  rock.position.y = -0.2;
+  const rockTex = await raiTextures();
+  const rockN = rockTex.normal.clone(); rockN.repeat.set(7, 7); rockN.needsUpdate = true;
+  const rockGeo = new THREE.PlaneGeometry(3, 3, 180, 180);
+  rockGeo.rotateX(-Math.PI / 2);
+  {
+    const p = rockGeo.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), z = p.getZ(i);
+      const r = Math.hypot(x, z);
+      const lump = (Math.sin(x * 7.1 + 1.3) * Math.cos(z * 6.3) * 0.012 + Math.sin(x * 19 + z * 13) * 0.003) * Math.min(1, r / 0.25);
+      p.setY(i, lump - Math.max(0, r - 0.9) * 0.1);
+    }
+    rockGeo.computeVertexNormals();
+  }
+  const rockMat = new THREE.MeshStandardMaterial({ color: 0x0b0c0d, roughness: 0.86, metalness: 0, normalMap: rockN, normalScale: new THREE.Vector2(0.28, 0.28), envMap: env, envMapIntensity: 0.14 });
+  const rock = new THREE.Mesh(rockGeo, rockMat);
   rock.receiveShadow = true;
   salt.group.add(rock);
   scene.add(salt.group);
-  const hand = new THREE.Mesh(cuppedHandGeometry(), new THREE.MeshPhysicalMaterial({
-    color: 0x1b110c, roughness: 0.6, metalness: 0, sheen: 0.18, sheenRoughness: 0.5, sheenColor: new THREE.Color(0.62, 0.36, 0.26),
-    envMapIntensity: 0.18,
-  }));
-  hand.castShadow = true; hand.receiveShadow = true;
-  hand.position.y = -0.0115;
-  salt.group.add(hand);
 
   // Stone money.
   const stoneMat = await raiMaterial({ tint: 0xffe9cc });
@@ -507,35 +607,51 @@ export async function seaStage(film) {
     bushes.castShadow = true; bushes.receiveShadow = true;
   }
   island.add(bushes);
-  // The ledger: threads of light between stones, added on each "every".
+  // The ledger: a cord of light strung from stone to stone around the ring. Each "every" carries it on
+  // to the next stones; on the last it closes the circle round the island. A lamp lights on each stone it reaches.
   const PAIRS = [
-    [[0, 5]],
-    [[2, 8], [9, 3]],
-    [[1, 6], [4, 10], [7, 2]],
-    [[3, 7], [5, 10], [6, 0], [8, 4], [1, 9], [0, 3], [6, 9]],
+    [[0, 1], [1, 2]],
+    [[2, 3], [3, 4], [4, 5]],
+    [[5, 6], [6, 7], [7, 8]],
+    [[8, 9], [9, 10], [10, 0]],
   ];
-  const threadMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.0, 0.86, 0.6).multiplyScalar(3.2), transparent: true, depthWrite: false, fog: false });
+  const threadMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.0, 0.8, 0.52).multiplyScalar(1.8), fog: false });
   const threads = [];
-  const TSEG = 64, TRAD = 6;
+  const TSEG = 48, TRAD = 5;
   PAIRS.forEach((group, gi) => group.forEach(([a, b], k) => {
     const A = ring[a].top, B = ring[b].top;
-    const mid = A.clone().add(B).multiplyScalar(0.5);
-    mid.y += A.distanceTo(B) * 0.22 + 1.5;
-    const curve = new THREE.QuadraticBezierCurve3(A.clone(), mid, B.clone());
-    const geo = new THREE.TubeGeometry(curve, TSEG, 0.038, TRAD, false);
+    // a cord hanging between two posts: sags in the middle
+    const pts = [];
+    for (let i = 0; i <= 24; i++) {
+      const u = i / 24;
+      const p = A.clone().lerp(B, u);
+      p.y -= Math.sin(Math.PI * u) * A.distanceTo(B) * 0.09;
+      pts.push(p);
+    }
+    const curve = new THREE.CatmullRomCurve3(pts);
+    const geo = new THREE.TubeGeometry(curve, TSEG, 0.026, TRAD, false);
     const mesh = new THREE.Mesh(geo, threadMat.clone());
     mesh.frustumCulled = false;
     island.add(mesh);
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 0.92, 0.75).multiplyScalar(6), fog: false }));
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.11, 12, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 0.9, 0.7).multiplyScalar(3.5), fog: false }));
     island.add(head);
     threads.push({ mesh, geo, curve, head, group: gi, k, a, b });
   }));
+  // a small oil-lamp flame on top of each stone
+  const lampMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 0.72, 0.36).multiplyScalar(3), fog: false });
+  const lamps = ring.map((r) => {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 8), lampMat.clone());
+    m.scale.set(1, 1.6, 1);
+    m.position.copy(r.top).add(new THREE.Vector3(0, 0.14, 0));
+    island.add(m);
+    return m;
+  });
   scene.add(island);
 
   const tmp = new THREE.Vector3();
   const S = {
     scene, env, sky, stars, moon, halo, sea, seaU, skyU, moonLight, hemi, fill, warm,
-    cowrie, salt, rock, hand, boat, canoeStone, beach, hero, beachPalms, island, terr, ring, palms, threads, SETS,
+    cowrie, salt, rock, boat, canoeStone, beach, hero, beachPalms, island, terr, ring, palms, threads, SETS,
     fx: { bloom: 0.4, threshold: 1.0, bloomRadius: 0.5, grain: 0.05, vignette: 0.5, tint: [0.97, 1.0, 1.0], contrast: 1.06 },
     // Moon as seen from the camera: azimuth from -Z toward +X, elevation, angular diameter (degrees).
     moonAz: 0, moonEl: 8, moonSize: 10, moonGain: 1.3, pathW: null, lightFromMoon: true,
@@ -571,21 +687,29 @@ export async function seaStage(film) {
       if (c.right !== h) { c.left = -h; c.right = h; c.top = h; c.bottom = -h; c.near = 1; c.far = 400; c.updateProjectionMatrix(); }
     },
     // Draw the ledger threads: each group of threads starts at its "every".
-    ledger(t, hits, dur = 0.34) {
+    ledger(t, hits, dur = 0.2) {
       let lit = 0;
+      const reached = new Array(ring.length).fill(-1); // time each stone's lamp lit
       for (const th of threads) {
-        const t0 = hits[th.group] + th.k * 0.07;
+        const t0 = hits[th.group] + th.k * dur;
         const k = clamp((t - t0) / dur);
-        const drawn = Math.floor(easeOut(k, 2) * TSEG) * TRAD * 6;
+        const drawn = Math.floor(k * TSEG) * TRAD * 6;
         th.geo.setDrawRange(0, drawn);
         th.mesh.visible = k > 0;
-        const glow = k >= 1 ? 0.75 : 0.9;
-        th.mesh.material.color.setRGB(1.0, 0.84, 0.58).multiplyScalar(2.4 * glow);
+        const glow = k >= 1 ? 0.8 + 0.2 * Math.sin(t * 3 + th.a) : 1;
+        th.mesh.material.color.setRGB(1.0, 0.8, 0.52).multiplyScalar(1.8 * glow);
         th.head.visible = k > 0 && k < 1;
-        if (th.head.visible) th.head.position.copy(th.curve.getPoint(easeOut(k, 2)));
-        if (k >= 1) { lit++; ring[th.a].glow = Math.max(ring[th.a].glow, clamp((t - t0 - dur) / 0.3)); ring[th.b].glow = Math.max(ring[th.b].glow, clamp((t - t0 - dur) / 0.3)); }
+        if (th.head.visible) th.head.position.copy(th.curve.getPoint(k));
+        if (k > 0 && (reached[th.a] < 0 || t0 < reached[th.a])) reached[th.a] = t0;
+        if (k >= 1) { lit++; const tb = t0 + dur; if (reached[th.b] < 0 || tb < reached[th.b]) reached[th.b] = tb; }
       }
-      for (const r of ring) r.mat.emissiveIntensity = r.glow * 0.16;
+      ring.forEach((r, i) => {
+        const on = reached[i] >= 0 ? clamp((t - reached[i]) / 0.15) : 0;
+        r.glow = on;
+        r.mat.emissiveIntensity = on * 0.1;
+        lamps[i].visible = on > 0;
+        lamps[i].scale.set(on, on * (1.5 + 0.2 * Math.sin(t * 17 + i * 3)), on);
+      });
       return lit;
     },
     update(ctx) {
@@ -603,12 +727,13 @@ export async function seaStage(film) {
       warm.intensity = 0;
       cowrie.group.visible = false; cowrie.holder.rotation.set(0, 0, 0); cowrie.spinner.rotation.set(0, 0, 0);
       salt.group.visible = false;
-      rock.visible = true; hand.visible = false;
+      rock.visible = true;
       boat.group.visible = false;
       beach.visible = false;
       hero.rotation.set(Math.PI / 2, 0, 0, 'XYZ');
       island.visible = false;
       for (const th of threads) { th.mesh.visible = false; th.head.visible = false; }
+      for (const l of lamps) l.visible = false;
       for (const r of ring) { r.glow = 0; r.mat.emissiveIntensity = 0; }
       scene.environmentIntensity = 1.0;
     },

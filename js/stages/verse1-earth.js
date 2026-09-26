@@ -88,19 +88,29 @@ const ROCK = /* glsl */ `
     float joint = step(0.55, hash12(vec2(jk, bid))) * smoothstep(0.05, 0.012, abs(jx - jk));
     rockC *= (1.0 - parting * 0.55) * (1.0 - joint * 0.8);
     float hRock = hard * 0.35 + 0.12 * sin(bf * 3.14159) - parting * 0.25 - joint * 0.45 + 0.25 * ridged(p * 1.4);
-    // clay with a few stones
-    float mott = fbm(p * 3.1 + 5.0);
-    vec3 clayC = mix(vec3(0.11, 0.055, 0.03), vec3(0.2, 0.1, 0.055), mott) * (0.55 + 0.9 * lum);
-    vec3 v = voro(p * 4.0 + 2.0);
-    float stone = step(0.86, v.z) * smoothstep(0.3, 0.18, v.x + (vnoise(p * 20.0) - 0.5) * 0.12);
-    clayC = mix(clayC, vec3(0.16, 0.15, 0.14) * (0.4 + 1.2 * lum), stone);
-    float hClay = n * 0.3 + mott * 0.1 + stone * 0.3;
-    // topsoil
-    vec3 soilC = vec3(0.045, 0.033, 0.024) * (0.5 + 0.9 * n) * (0.7 + 0.6 * lum);
-    float hSoil = n * 0.3;
+    // clay: rusty orange-brown with grey-green mottles, fine bedding, and gravel of many sizes
+    float mott = fbm(p * 2.6 + 5.0);
+    float gley = smoothstep(0.58, 0.72, fbm(p * 1.7 + 13.0));
+    float lamC = 0.5 + 0.5 * sin((p.y + (fbm3(p * 0.8) - 0.5) * 0.6) * 38.0);
+    vec3 clayC = mix(vec3(0.16, 0.075, 0.035), vec3(0.3, 0.15, 0.07), mott);
+    clayC = mix(clayC, vec3(0.2, 0.19, 0.15), gley * 0.7);
+    clayC *= (0.62 + 0.75 * lum) * (0.9 + 0.1 * lamC);
+    vec3 v = voro(p * 5.5 + 2.0);
+    float stone = step(0.8, v.z) * smoothstep(0.34, 0.16, v.x + (vnoise(p * 24.0) - 0.5) * 0.14);
+    vec3 v2 = voro(p * 11.0 + 7.0 + (vec2(fbm3(p * 4.0), fbm3(p * 4.0 + 9.0)) - 0.5) * 1.2);
+    float grit = step(0.86, v2.z) * smoothstep(0.26, 0.1, v2.x + (vnoise(p * 60.0) - 0.5) * 0.1);
+    vec3 stoneC = mix(vec3(0.12, 0.115, 0.11), vec3(0.32, 0.27, 0.2), hash12(vec2(v.z * 91.0, 1.0))) * (0.5 + lum);
+    clayC = mix(clayC, stoneC, stone);
+    clayC = mix(clayC, vec3(0.22, 0.2, 0.17) * (0.6 + lum), grit * 0.8);
+    float hClay = n * 0.35 + mott * 0.1 + lamC * 0.04 + stone * 0.45 + grit * 0.15;
+    // topsoil: near-black crumb with small aggregates
+    vec3 v3 = voro(p * 7.0 + 3.0 + (vec2(fbm3(p * 3.0), fbm3(p * 3.0 + 5.0)) - 0.5) * 0.9);
+    float clod = smoothstep(0.015, 0.09, v3.y); // 0 in the cracks between clods
+    vec3 soilC = vec3(0.045, 0.034, 0.025) * (0.5 + 0.9 * n) * (0.65 + 0.7 * lum) * (0.45 + 0.6 * clod) * (0.85 + 0.3 * v3.z);
+    float hSoil = n * 0.3 + clod * 0.22;
     alb = mix(mix(soilC, clayC, tSoil), rockC, tRock);
     h = mix(mix(hSoil, hClay, tSoil), hRock, tRock);
-    nt *= mix(mix(0.4, 0.6, tSoil), 1.0, tRock);
+    nt *= mix(mix(0.7, 0.9, tSoil), 1.0, tRock);
     wet = tRock * fresh * (0.35 + joint * 0.5 + parting * 0.3);
     // Roots hang down from the turf into the clay.
     if (d < 1.1 && d > 0.0) {
@@ -108,9 +118,9 @@ const ROCK = /* glsl */ `
       float stripe = floor(rx / 3.14159);
       float has = step(0.5, hash12(vec2(stripe, 7.0)));
       float line = abs(fract(rx / 3.14159) - 0.5);
-      float thick = 0.045 * (1.0 - d / 1.1);
+      float thick = 0.03 * (1.0 - d / 1.1);
       float root = has * smoothstep(thick, thick * 0.3, line);
-      alb = mix(alb, vec3(0.15, 0.105, 0.07), root);
+      alb = mix(alb, vec3(0.13, 0.095, 0.065), root * 0.85);
       h += root * 0.15;
     }
     // The vein: a seam of milky quartz carrying gold, with a dark contact along its edges.

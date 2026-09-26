@@ -97,8 +97,32 @@ async function turntable(film) {
   moonTex.colorSpace = THREE.SRGBColorSpace; moonTex.needsUpdate = true;
   const moon = new THREE.Mesh(new THREE.CircleGeometry(7, 96), new THREE.MeshBasicMaterial({ map: moonTex, color: new THREE.Color(1.15, 1.12, 1.05), fog: false }));
   moonTex.center.set(0.5, 0.5);
+  // The photo's disc ends just inside its square (at 0.992 of the half-width): fit the disc to the circle, so no dark
+  // ring of the photo's black sky shows round the moon's edge.
+  moonTex.repeat.set(0.986, 0.986);
   moon.position.set(0, 3.4, -40);
   scene.add(moon);
+  // Keep the moon sharp. It is ten times farther away than the focus, so the shot's depth of field blurred it by about
+  // 4 px at 1080p: that does not show on a small moon, but it made this big one look low-resolution. A stand-in for
+  // the part of the moon above the water draws only into the blur's depth pass (in the picture it writes nothing).
+  // It is pulled toward the lens to the focus distance, so it covers exactly the moon's pixels and marks them as in
+  // focus. Everything else keeps its blur.
+  const a0 = Math.asin(-moon.position.y / 7); // where the sea's surface cuts the disc
+  const above = new THREE.Shape();
+  above.absarc(0, 0, 7, a0, Math.PI - a0, false);
+  above.closePath();
+  const moonFocus = new THREE.Mesh(new THREE.ShapeGeometry(above, 64), new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false }));
+  moonFocus.frustumCulled = false;
+  const lens = new THREE.Vector3(), moonView = new THREE.Vector3(), toLens = new THREE.Matrix4(), shrink = new THREE.Matrix4(), back = new THREE.Matrix4();
+  moonFocus.onBeforeRender = (r, sc, camera) => {
+    lens.setFromMatrixPosition(camera.matrixWorld);
+    moonView.setFromMatrixPosition(moon.matrixWorld).applyMatrix4(camera.matrixWorldInverse);
+    const k = Math.min(1, film.bokeh.uniforms.focus.value / Math.max(1e-3, -moonView.z));
+    // scale about the lens: every point keeps its place on screen and moves to the focus distance
+    toLens.makeTranslation(-lens.x, -lens.y, -lens.z); shrink.makeScale(k, k, k); back.makeTranslation(lens.x, lens.y, lens.z);
+    moonFocus.matrixWorld.copy(moon.matrixWorld).premultiply(toLens).premultiply(shrink).premultiply(back);
+  };
+  moon.add(moonFocus);
   const starGeo = new THREE.BufferGeometry();
   const sp = new Float32Array(900 * 3);
   for (let i = 0; i < 900; i++) {
@@ -109,18 +133,70 @@ async function turntable(film) {
   const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({ size: 0.12, color: new THREE.Color(1.4, 1.35, 1.25), fog: false, sizeAttenuation: true }));
   scene.add(stars);
 
+  // A moonlit sea, the bookend to verse 1's opening: a night sky, dark water the pedestal stands in,
+  // and the moon's broken path of light across the water.
+  const HORIZON = new THREE.Color(0.03, 0.045, 0.09);
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(200, 48, 24), new THREE.ShaderMaterial({
+    side: THREE.BackSide, depthWrite: false, fog: false,
+    vertexShader: 'varying vec3 vDir; void main() { vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: `varying vec3 vDir;
+      void main() {
+        vec3 d = normalize(vDir);
+        vec3 c = mix(vec3(${HORIZON.r}, ${HORIZON.g}, ${HORIZON.b}), vec3(0.003, 0.005, 0.014), smoothstep(0.0, 0.45, d.y));
+        c += vec3(0.05, 0.06, 0.08) * pow(max(0.0, dot(d, normalize(vec3(0.0, 0.08, -1.0)))), 12.0); // haze round the moon
+        gl_FragColor = vec4(d.y < 0.0 ? vec3(${HORIZON.r}, ${HORIZON.g}, ${HORIZON.b}) * 0.6 : c, 1.0);
+      }`,
+  }));
+  scene.add(sky);
+  // dark night water: no studio reflections in it (they read as a grey-brown floor)
+  const sea = new THREE.Mesh(new THREE.CircleGeometry(150, 96), new THREE.MeshStandardMaterial({ color: 0x020409, roughness: 0.4, metalness: 0, envMapIntensity: 0.0 }));
+  sea.rotation.x = -Math.PI / 2;
+  sea.receiveShadow = true;
+  scene.add(sea);
+  // The moon's glade: short streaks of light scattered along a line from under the moon toward us.
+  const gc = document.createElement('canvas');
+  gc.width = 256; gc.height = 1024;
+  {
+    const g = gc.getContext('2d');
+    for (let i = 0; i < 700; i++) {
+      const v = hash1(i * 3 + 1), y = v * 1024, spread = 20 + (1 - v) * 90;
+      const x = 128 + (hash1(i * 3) - 0.5) * 2 * spread * Math.sqrt(hash1(i * 3 + 2));
+      const w = 3 + hash1(i * 5) * (10 + v * 16), a = (0.25 + 0.75 * (1 - v)) * (1 - Math.abs(x - 128) / (spread + 8));
+      g.fillStyle = `rgba(215,228,255,${Math.max(0, a).toFixed(3)})`;
+      g.fillRect(x - w / 2, y, w, 1.5 + (1 - v) * 1.5);
+    }
+  }
+  const gladeTex = new THREE.CanvasTexture(gc);
+  gladeTex.colorSpace = THREE.SRGBColorSpace;
+  const glade = new THREE.Mesh(new THREE.PlaneGeometry(4.5, 44), new THREE.MeshBasicMaterial({ map: gladeTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, color: new THREE.Color(0.9, 0.95, 1.1) }));
+  glade.rotation.x = -Math.PI / 2;
+  glade.position.set(0, 0.012, -20);
+  scene.add(glade);
+  scene.fog.color.copy(HORIZON);
+
   // The same cowrie that opens verse 1, so the film ends where it began.
   const shell = v1Cowrie({ length: 1.35 }); // lit by this stage's warm studio, not verse 1's cool one
   const coin = new Coin({ radius: 0.62, thickness: 0.1, face: await coinFace('stater'), metal: 'gold', edge: edgeText('CAN’T PRINT THE PROOF'), seed: 31 });
   const noteTex = await banknote({ seed: 5 });
-  const noteGeo = new THREE.PlaneGeometry(2.1, 0.9, 24, 6);
-  const np = noteGeo.attributes.position;
-  for (let i = 0; i < np.count; i++) np.setZ(i, Math.sin(np.getX(i) * 1.1) * 0.08);
-  noteGeo.computeVertexNormals();
   const noteMat = new THREE.MeshStandardMaterial({ map: noteTex, side: THREE.DoubleSide, roughness: 0.8 });
   noteMat.customProgramCacheKey = () => 'outro-note-both-sides';
   noteMat.onBeforeCompile = readableBothSides;
-  const note = new THREE.Mesh(noteGeo, noteMat);
+  // The note in two halves hinged on its centre line, so on "Now I'm proof" it can fold shut like a book.
+  const note = new THREE.Group();
+  const halves = [0, 1].map((side) => {
+    const g = new THREE.PlaneGeometry(1.05, 0.9, 12, 6);
+    const uv = g.attributes.uv, pos = g.attributes.position;
+    for (let i = 0; i < uv.count; i++) {
+      uv.setX(i, uv.getX(i) * 0.5 + side * 0.5);
+      const x = pos.getX(i) + (side ? 0.525 : -0.525);
+      pos.setX(i, x); pos.setZ(i, Math.sin(x * 1.1) * 0.08);
+    }
+    g.computeVertexNormals();
+    const hinge = new THREE.Group();
+    hinge.add(new THREE.Mesh(g, noteMat));
+    note.add(hinge);
+    return hinge;
+  });
   const last = film.chain.block(film.chain.n - 1);
   const block = new Block({ hash: last.hash, height: '#' + last.i.toLocaleString('en-US'), nonce: last.nonce, style: 'engraved' });
   block.scale.setScalar(0.95);
@@ -149,7 +225,11 @@ async function turntable(film) {
   const NS = 260;
   const ringGeo = new THREE.BufferGeometry();
   ringGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(NS * 3), 3));
-  const ring = new THREE.Points(ringGeo, new THREE.PointsMaterial({ size: 0.03, color: new THREE.Color(1, 0.7, 0.35).multiplyScalar(5), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+  // Round, soft sparks (plain points draw as squares, which read as grey tiles once they fade near the lens).
+  const dot = document.createElement('canvas');
+  dot.width = dot.height = 64;
+  { const g = dot.getContext('2d'), grd = g.createRadialGradient(32, 32, 0, 32, 32, 32); grd.addColorStop(0, 'rgba(255,255,255,1)'); grd.addColorStop(0.35, 'rgba(255,255,255,0.6)'); grd.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = grd; g.fillRect(0, 0, 64, 64); }
+  const ring = new THREE.Points(ringGeo, new THREE.PointsMaterial({ size: 0.035, map: new THREE.CanvasTexture(dot), color: new THREE.Color(1, 0.7, 0.35).multiplyScalar(3), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
   ring.frustumCulled = false;
   scene.add(ring);
 
@@ -172,7 +252,7 @@ async function turntable(film) {
   scene.add(dust);
 
   return {
-    scene, hero, forms, shell, coin, note, block, chain, ring, card, title, line1, line2, pedestal, lip, top, rim, dust, moon, stars,
+    scene, hero, forms, shell, coin, note, halves, block, sky, sea, glade, chain, ring, card, title, line1, line2, pedestal, lip, top, rim, dust, moon, stars,
     fx: { bloom: 0.45, threshold: 1.0, bloomRadius: 0.4, grain: 0.04, vignette: 0.55 },
     show(i, k = 1) { forms.forEach((f, j) => { f.visible = j === i; }); forms[i].scale.multiplyScalar(k); },
     burst(t, t0) {
@@ -181,7 +261,7 @@ async function turntable(film) {
       ring.visible = dt >= 0 && dt < 0.6;
       if (!ring.visible) return;
       for (let i = 0; i < NS; i++) {
-        const a = (i / NS) * Math.PI * 2, r = 0.7 + dt * (2.5 + hash1(i) * 2);
+        const a = (i / NS) * Math.PI * 2, r = 0.7 + dt * (1.1 + hash1(i) * 0.9); // stays well clear of the lens
         p[i * 3] = Math.cos(a) * r; p[i * 3 + 1] = 1.9 + (hash1(i + 3) - 0.5) * 0.3 + dt * 0.3; p[i * 3 + 2] = Math.sin(a) * r;
       }
       ring.geometry.attributes.position.needsUpdate = true;
@@ -189,6 +269,8 @@ async function turntable(film) {
     },
     update(ctx) {
       forms.forEach((f) => { f.visible = false; f.rotation.set(0, 0, 0); });
+      halves.forEach((h) => { h.rotation.set(0, 0, 0); h.scale.setScalar(1); });
+      sky.visible = true; sea.visible = true; glade.visible = true;
       shell.scale.setScalar(1.35);
       moon.visible = true; stars.visible = true; coin.scale.setScalar(1); note.scale.setScalar(1); block.scale.setScalar(0.95);
       block.setGlow(1);
@@ -210,8 +292,8 @@ export const stages = { 'outro-turntable': turntable };
 export function shots(S, T) {
   const w = (word) => T.wordAfter(word, 175).s;
   const tI = w('i'), tShell = w('shell.'), tGold = w('gold.'), tPaper = w('paper.'), tNow = w('now'), tProof = w('proof.');
-  const tJoin = tProof + 0.9;
-  const tCard = 181.4;
+  const tJoin = tProof + 0.7;
+  const tCard = 180.9; // leaves the address on screen for over two seconds
 
   // Anticipation: an empty pedestal in the dark, one light. Then the forms, one per word.
   // Where the camera sits while the forms change; they turn to face it.
@@ -233,21 +315,39 @@ export function shots(S, T) {
   },
     (s, c) => {
       const t = c.t;
-      const pop = (t0) => easeOutBack(clamp((t - t0 + 0.06) / 0.28), 2.2);
       s.top.intensity = 18 * clamp((t - 173.6) / 1.4);
       if (t >= tI) {
-        let i = 0, t0 = tI;
-        if (t >= tGold - 0.05) { i = 1; t0 = tGold - 0.05; }
-        if (t >= tPaper - 0.05) { i = 2; t0 = tPaper - 0.05; }
-        if (t >= tProof - 0.05) { i = 3; t0 = tProof - 0.05; }
-        s.show(i, i === 0 ? clamp((t - tI) / (tShell - tI)) : Math.max(0.01, pop(t0)));
+        // Each form hands over to the next: the old one shrinks away as the new one grows out of it.
+        // On "Now" the note folds shut like a book, and on "proof" the block grows out of the fold.
+        const tG = tGold - 0.05, tP = tPaper - 0.05, tB = tProof - 0.3;
+        // the old form is gone before the new one grows, under the burst of sparks: they never pass through each other
+        const grow = (t0) => easeOutBack(clamp((t - t0 - 0.07) / 0.3), 1.5);
+        const shrink = (t1) => 1 - easeIn(clamp((t - t1 + 0.1) / 0.16), 2);
         const p = camAt(t).pos, face = Math.atan2(p[0], p[2]) - s.hero.rotation.y;
-        // the shell tilts to show its toothed underside as well as its spotted back
-        if (i === 0) s.shell.rotation.set(-0.95 + Math.sin(t * 1.1) * 0.08, face + 0.35 + Math.sin(t * 0.7) * 0.15, 0);
-        if (i === 1) s.coin.rotation.set(0, face + 0.45 + (t - t0) * 0.9, 0);
-        if (i === 2) s.note.rotation.set(0.12, face + Math.sin(t * 1.3) * 0.22, 0.05);
-        if (i === 3) s.block.setGlow(1 + 1.6 * pulse(t - tProof, 2.5));
-        for (const tb of [tGold - 0.05, tPaper - 0.05, tProof - 0.05]) s.burst(t, tb);
+        if (t < tG + 0.07) {
+          s.shell.visible = true;
+          s.shell.scale.setScalar(1.35 * clamp((t - tI) / (tShell - tI)) * shrink(tG));
+          // it tilts to show its toothed underside as well as its spotted back
+          s.shell.rotation.set(-0.95 + Math.sin(t * 1.1) * 0.08, face + 0.35 + Math.sin(t * 0.7) * 0.15, 0);
+        }
+        if (t >= tG + 0.07 && t < tP + 0.07) {
+          s.coin.visible = true;
+          s.coin.scale.setScalar(Math.max(0.01, grow(tG) * shrink(tP)));
+          s.coin.rotation.set(0, face + 0.45 + (t - tG) * 0.9, 0);
+        }
+        if (t >= tP + 0.07 && t < tProof + 0.12) {
+          s.note.visible = true;
+          const fold = easeInOut(clamp((t - tNow) / (tB + 0.25 - tNow)));
+          s.note.scale.setScalar(Math.max(0.01, grow(tP) * (1 - easeIn(clamp((t - tProof + 0.12) / 0.24), 2))));
+          s.note.rotation.set(0.12 * (1 - fold), face + Math.sin(t * 1.3) * 0.22 * (1 - fold), 0.05 * (1 - fold));
+          s.halves[0].rotation.y = 1.3 * fold; s.halves[1].rotation.y = -1.3 * fold;
+        }
+        if (t >= tB) {
+          s.block.visible = true;
+          s.block.scale.setScalar(0.95 * easeOutBack(clamp((t - tB) / 0.4), 1.3));
+          s.block.setGlow(1 + 1.6 * pulse(t - tProof, 2.5));
+        }
+        for (const tb of [tG, tP, tProof - 0.05]) s.burst(t, tb);
       }
     },
     {
@@ -261,7 +361,7 @@ export function shots(S, T) {
       s.block.setGlow(1.2);
       s.chain.visible = true;
       s.chain.children.forEach((k, i) => { k.visible = c.lt > i * 0.05; });
-      s.pedestal.visible = false; s.lip.visible = false; s.moon.visible = false;
+      s.pedestal.visible = false; s.lip.visible = false; s.moon.visible = false; s.glade.visible = false;
       s.top.intensity = 4;
     }, { bloom: 0.3, threshold: 1.1, fadeOut: 0.5 });
   // End card.
@@ -274,10 +374,11 @@ export function shots(S, T) {
   }, (s, c) => {
     s.forms.forEach((f) => { f.visible = false; });
     s.pedestal.visible = false; s.lip.visible = false; s.dust.visible = false; s.moon.visible = false; s.stars.visible = false;
+    s.sky.visible = false; s.sea.visible = false; s.glade.visible = false; // the end card sits on black
     s.card.visible = true;
     s.card.position.set(0, 20, 0);
-    s.title.material.opacity = clamp(c.lt / 0.6);
-    s.line1.material.opacity = clamp((c.lt - 0.5) / 0.6);
-    s.line2.material.opacity = clamp((c.lt - 0.9) / 0.6);
+    s.title.material.opacity = clamp(c.lt / 0.45);
+    s.line1.material.opacity = clamp((c.lt - 0.25) / 0.45);
+    s.line2.material.opacity = clamp((c.lt - 0.45) / 0.45);
   }, { hud: 0, bloom: 0.25, threshold: 1.0, shake: 0, vignette: 0.3, grain: 0.03 });
 }
