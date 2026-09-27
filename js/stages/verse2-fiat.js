@@ -82,7 +82,7 @@ export async function fiatStage(film) {
   clip.position.set(0, -NH / 2 - 0.02, 0);
 
   // The gold bar and its chain.
-  const st = stamp();
+  const st = await stamp();
   const gold = clampHot(new THREE.MeshPhysicalMaterial({ color: new THREE.Color().setRGB(1, 0.72, 0.3), metalness: 1, roughness: 0.22 }), 3.5);
   const goldTop = clampHot(new THREE.MeshPhysicalMaterial({ color: new THREE.Color().setRGB(1, 0.72, 0.3), metalness: 1, roughness: 0.24, map: st.color, normalMap: st.normal }), 3.5);
   const bar = new THREE.Mesh(barGeometry(), [gold, gold, goldTop, gold, gold, gold]);

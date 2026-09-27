@@ -24,8 +24,10 @@ export function barGeometry() {
 }
 
 // The assay stamp on the bar's top face: just the year, big, in a double border (colour: dark recessed letters;
-// height: letters low). Small hallmark text did not read on a phone.
-export function stamp() {
+// height: letters low). Small hallmark text did not read on a phone. The year is drawn from the film's lining-figure
+// outlines (data/glyphs.json) and centred on its ink inside the border, so it sits in the middle and clear of the frame.
+export async function stamp() {
+  const glyphs = (await (await fetch('./data/glyphs.json')).json()).glyphs;
   const w = 1024, h = 310;
   const draw = (g, bg, ink) => {
     g.fillStyle = bg; g.fillRect(0, 0, w, h);
@@ -34,15 +36,43 @@ export function stamp() {
     g.beginPath(); g.roundRect(70, 48, w - 140, h - 96, 60); g.stroke();
     g.lineWidth = 3;
     g.beginPath(); g.roundRect(86, 64, w - 172, h - 128, 48); g.stroke();
-    g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.font = '900 196px "Playfair Display"';
-    g.fillText('1912', w / 2, h / 2 + 8);
+    // The inner border is 182 px tall. The year sits 6 px toward the near edge: seen from the front, perspective and the
+    // recess's shading narrow the far margin, so this reads as centred on the bar (34 px clear above, 22 below).
+    fillGlyphs(g, glyphs, '1912', w / 2, h / 2 + 6, 124, 60);
   };
   const [cc, cg] = canvas2d(w, h);
   draw(cg, '#ffffff', '#6b4a22');
   const [hc, hg] = canvas2d(w, h);
   draw(hg, '#ffffff', '#303030');
   return { color: canvasTex(cc), normal: normalFromHeight(hc, 2.8, 1.2) };
+}
+
+// Fill text from glyph outlines (font units, y up), centred on its ink at (cx, cy). The digits stand `height` px tall
+// (lining figures are 722 units); `track` adds space between glyphs, in font units.
+function fillGlyphs(g, glyphs, text, cx, cy, height, track = 0) {
+  const s = height / 722, placed = [];
+  let x = 0, x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const ch of text) {
+    const gl = glyphs[ch];
+    for (const c of gl.cmds) for (let i = 1; i < c.length; i += 2) {
+      x0 = Math.min(x0, x + c[i]); x1 = Math.max(x1, x + c[i]); y0 = Math.min(y0, c[i + 1]); y1 = Math.max(y1, c[i + 1]);
+    }
+    placed.push([gl, x]);
+    x += gl.advance + track;
+  }
+  const p = new Path2D();
+  for (const [gl, ox] of placed) for (const c of gl.cmds) {
+    if (c[0] === 'M') p.moveTo(ox + c[1], c[2]);
+    else if (c[0] === 'L') p.lineTo(ox + c[1], c[2]);
+    else if (c[0] === 'Q') p.quadraticCurveTo(ox + c[1], c[2], ox + c[3], c[4]);
+    else if (c[0] === 'C') p.bezierCurveTo(ox + c[1], c[2], ox + c[3], c[4], ox + c[5], c[6]);
+    else if (c[0] === 'Z') p.closePath();
+  }
+  g.save();
+  g.translate(cx - ((x0 + x1) / 2) * s, cy + ((y0 + y1) / 2) * s);
+  g.scale(s, -s);
+  g.fill(p);
+  g.restore();
 }
 
 // FINE GOLD struck large along the bar's long front face.
@@ -167,7 +197,7 @@ export async function barStage(film) {
   scene.add(table);
 
   // The bar.
-  const st = stamp();
+  const st = await stamp();
   // fine gold: warm yellow; highlights capped so the lamp's streak can never wash out the stamp
   const GOLD = new THREE.Color().setRGB(1, 0.74, 0.28);
   const gold = clampHot(new THREE.MeshPhysicalMaterial({ color: GOLD, metalness: 1, roughness: 0.2 }), 1.5);
