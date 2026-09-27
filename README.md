@@ -38,7 +38,8 @@ your way to 2050. The answer stands in cast metal on the film's wet mirror; the 
 
 - **The model** is [Bitcoin24](https://github.com/bitcoin-model/bitcoin_model) v1.0 (commit 30c97a7) by
   Michael Saylor, Shirish Jajodia and Chaitanya Jain: its bear, base and bull price cases, its macro model of
-  world assets, its asset returns and its five strategies, re-implemented in JavaScript. After 2045, where
+  world assets, its asset returns and its five strategies, re-implemented in JavaScript (the page offers the
+  first four; the fifth, Triple Maxi, gave way to Double Dipper). After 2045, where
   Bitcoin24 stops, bitcoin grows with the world's other assets; that extension is ours.
 - **Added here, not in Bitcoin24:**
   - the freedom-year search and the years after it, when you stop earning and live on what you own. While you
@@ -54,7 +55,12 @@ your way to 2050. The answer stands in cast metal on the film's wet mirror; the 
   - the plan ends in 2050: past that, too much will change for the numbers to mean much;
   - warnings: numbers in a risky zone turn red, with the reason listed under the results;
   - swapping part of your bitcoin for STRC, Strategy's variable-rate preferred stock: its dividend rate and
-    its return-of-capital tax treatment. The sources for the STRC figures are linked on the page.
+    its return-of-capital tax treatment. The sources for the STRC figures are linked on the page. The borrow and
+    STRC paths sit under OG Mode;
+  - saving in STRC: a share of each year's savings buys STRC at $100. While you work, its dividends buy more
+    STRC; once you are free, they pay your costs first;
+  - Double Dipper: like Double Maxi, but half of what it moves, and half of your savings, go into STRC instead
+    of bitcoin.
 - `js/sim/model.js` is the model, with no page code. `node tools/test-sim.mjs` checks it against the Bitcoin24
   workbook figures and against hand-worked tax, loan and STRC cases.
 - The simulator also lives on its own at [darbsllim/sovereignty-simulator](https://github.com/darbsllim/sovereignty-simulator),

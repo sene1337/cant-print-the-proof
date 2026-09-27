@@ -45,7 +45,7 @@ near('Real estate implied return (Macro!X72)', M.impliedReturn('realEstate'), 0.
 console.log('\nIndividual sheet, 2045 net assets, Base case, default inputs');
 const asm = M.defaultAssumptions();
 function individual(i) {
-  const st = M.STRATEGIES[i];
+  const st = M.B24_STRATEGIES[i];
   const p = { startYear: 2024, endYear: 2045, stack: 0, assets: 1e6, earnings: 2e5, save: st.save, strategy: st,
     mix: asm.mix, returns: asm.returns, tax: asm.incomeTax, earningsGrowth: asm.earningsGrowth,
     mortgageShare: asm.mortgageShare, mortgageRate: asm.mortgageRate, spend: 0, inflation: 0 };
@@ -54,7 +54,7 @@ function individual(i) {
 const expectNet = [null, 19.160762026075282, 107.75238108308346, 158.48442332368464, 213.2258302125592];
 const expectBtc = [0, 0.9880531961761272, 7.9044255694090175, 11.803608884838194, 15.914910077368692];
 const cells = ['C66', 'C67', 'C68', 'C69', 'C70'];
-M.STRATEGIES.forEach((st, i) => {
+M.B24_STRATEGIES.forEach((st, i) => {
   const r = individual(i), last = r.rows[r.rows.length - 1];
   if (expectNet[i] != null) near(`${st.name} net assets (Individual!${cells[i]})`, last.net, expectNet[i] * 1e6, 0.005, $M);
   else {
@@ -142,7 +142,7 @@ if (existsSync(v1file)) {
   const a = html.indexOf('/* MODEL:BEGIN */'), b = html.indexOf('/* MODEL:END */');
   const V1 = new Function(html.slice(a, b) + '\nreturn SovModel;')();
   let n = 0, diff = [];
-  for (const k of ['bear', 'base', 'bull']) for (let strat = 0; strat < 5; strat++) for (const stack of [0, 0.5, 3, 25]) for (const spend of [5e4, 2e5, 8e5]) {
+  for (const k of ['bear', 'base', 'bull']) for (let strat = 0; strat < 4; strat++) for (const stack of [0, 0.5, 3, 25]) for (const spend of [5e4, 2e5, 8e5]) {
     const L = life({ case: k, strat, stack, spend }), r1 = V1.solve(L.p, L.pr.price, SMAX); n++;
     const a1 = L.r.rows[L.r.rows.length - 1].net, b1 = r1.rows[r1.rows.length - 1].net;
     if (L.r.s !== r1.s || Math.abs(a1 - b1) > Math.abs(b1) * 1e-12 + 1e-6) diff.push(`${k}/${strat}/${stack}/${spend}: ${L.r.s} vs ${r1.s}`);
@@ -328,6 +328,37 @@ console.log('\nLoan and STRC rates move toward the mortgage rate');
   const sr = M.simulate(S.p, sp.price, Y0).rows;
   near('STRC pays 12% in 2026', sr[0].income / sr[0].strc, 0.12, 1e-9);
   near('and 8.5% in 2038', sr[12].income / sr[12].strc, 0.085, 1e-9);
+}
+
+// ---------- STRC as savings, and Double Dipper (the simulator's own) ----------
+console.log('\nSaving in STRC, and Double Dipper');
+{
+  const A = M.defaultAssumptions(), c = A.cases.base;
+  const pr = M.pricePath({ model: 'b24', c, startYear: Y0, startPrice: 84000, endYear: 2050 });
+  const P = (o) => ({ startYear: Y0, endYear: 2050, stack: 0, assets: 1e6, earnings: 2e5, save: 0.25, mix: A.mix, returns: A.returns, tax: A.incomeTax,
+    earningsGrowth: A.earningsGrowth, mortgageShare: A.mortgageShare, mortgageRate: A.mortgageRate, spend: 1e5, inflation: 0.03, basis: 30000, cgt: 0.25,
+    strc: { share: 0, rate: 0.12, roc: true }, workGap: true, ...o });
+  const dd = M.STRATEGIES[4];
+  report(dd.name === 'Double Dipper' && M.STRATEGIES.length === 5 && !M.STRATEGIES.some((x) => x.name === 'Triple Maxi'), 'The strategies: four from Bitcoin24, then Double Dipper', M.STRATEGIES.map((x) => x.name).join(', '));
+  // Double Dipper moves all shares, bonds and cash plus a 25% loan on real estate: half to bitcoin, half to STRC.
+  const moved = 1e6 * (1 - A.mix.realEstate) + 0.25 * 1e6 * A.mix.realEstate;
+  const r0 = M.simulate(P({ strategy: dd }), pr.price, Infinity).rows[0];
+  near('Double Dipper puts half of what it moves into STRC today', r0.strc - r0.income, moved / 2, 1e-9, (v) => '$' + v.toFixed(0));
+  near('and half into bitcoin', r0.btc * 84000, moved / 2, 1e-9, (v) => '$' + v.toFixed(0));
+  // A share of each year's savings goes to STRC; the rest follows the strategy.
+  const maxi = M.STRATEGIES[2];
+  const a = M.simulate(P({ strategy: maxi, strcSave: 0.3 }), pr.price, Infinity).rows, b = M.simulate(P({ strategy: maxi, strcSave: 0 }), pr.price, Infinity).rows;
+  near('With 30% of savings in STRC, 30% of 2027\'s invested savings buys STRC', a[1].strc - a[0].strc - a[1].income, 0.3 * 0.25 * 2e5 * 1.05, 1e-9, (v) => '$' + v.toFixed(0));
+  near('and bitcoin gets 80% of the other 70%', a[1].bought / b[1].bought, 0.7, 1e-9);
+  // While you work, the dividend is reinvested: STRC grows by it.
+  const w = M.simulate(P({ strategy: dd, earnings: 0, save: 0, spend: 0 }), pr.price, Infinity).rows;
+  near('While you work, STRC\'s dividend is reinvested', w[1].strc / w[0].strc, 1.12, 1e-9);
+  report(w[0].income === 0, 'but not in the start year: like every other return, it begins next year', `2026 dividend $${w[0].income}`);
+  // Once free, STRC saved while working pays costs first on the sell path too, so less bitcoin is sold.
+  const f1 = M.simulate(P({ strategy: maxi, assets: 0, stack: 5, spend: 1.5e5, strcSave: 0.5, path: 'sell' }), pr.price, 2035).rows,
+    f0 = M.simulate(P({ strategy: maxi, assets: 0, stack: 5, spend: 1.5e5, strcSave: 0, path: 'sell' }), pr.price, 2035).rows;
+  const y = 2036 - Y0;
+  report(f1[y].income > 0 && f1[y].sold < f0[y].sold, 'Once free, STRC from savings pays costs first on the sell path too', `dividend $${Math.round(f1[y].income)}; bitcoin sold ${f1[y].sold.toFixed(3)} vs ${f0[y].sold.toFixed(3)}`);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

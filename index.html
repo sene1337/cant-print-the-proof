@@ -90,7 +90,7 @@
     <h2 id="simTitle">Your freedom year</h2>
     <p class="byline">by <a href="https://x.com/bradmillscan">@bradmillscan</a></p>
     <p>Set your bitcoin, what else you own and what your life costs. The simulator finds the first year you could stop working and still pay your way to 2050. The sooner that year, the higher your sun.</p>
-    <p class="sim-credit">Prices, returns and the five strategies come from <a href="https://github.com/bitcoin-model/bitcoin_model">Bitcoin24</a>, the open model by Michael Saylor, Shirish Jajodia and Chaitanya Jain. The rest is this simulator's own: the search for your freedom year, the years after it, and the tax, borrowing and STRC choices.</p>
+    <p class="sim-credit">Prices, returns and four of the five strategies come from <a href="https://github.com/bitcoin-model/bitcoin_model">Bitcoin24</a>, the open model by Michael Saylor, Shirish Jajodia and Chaitanya Jain. The rest is this simulator's own: the search for your freedom year, the years after it, the Double Dipper strategy, and the tax, borrowing and STRC choices.</p>
   </header>
 
   <div class="sim-grid">
@@ -153,6 +153,15 @@
           <input type="range" id="sSave" min="0" max="80" step="1" value="25" aria-describedby="saveHint">
           <p class="hint" id="saveHint"><span id="saveHintText"></span><button type="button" class="link" id="saveReset" hidden></button></p>
         </div>
+        <details class="strc-save" id="strcSaveBox">
+          <summary><span class="strc-title">Save some in STRC</span><span class="strc-split" id="saveSplit"></span></summary>
+          <div class="control">
+            <label for="sStrcSave">Share of your savings into STRC</label><output id="oStrcSave" for="sStrcSave"></output>
+            <input type="range" id="sStrcSave" min="0" max="100" step="5" value="0" aria-describedby="strcSaveHint strcAbout">
+            <p class="hint" id="strcSaveHint"><span id="strcSaveText"></span><button type="button" class="link" id="strcReset" hidden></button></p>
+            <p class="hint" id="strcAbout">STRC is Strategy's preferred stock. Here it is bought at its $100 stated amount. While you work, its dividends buy more STRC. Once you are free, they pay your costs before anything else. Set its dividend and tax in OG Mode, under Swap for STRC.</p>
+          </div>
+        </details>
         <div class="control">
           <label for="sSpend">What your life costs per year</label><output id="oSpend" for="sSpend"></output>
           <input type="range" id="sSpend" min="0" max="1000" value="459">
@@ -166,13 +175,13 @@
 
       <fieldset class="grp">
         <legend>Strategy</legend>
-        <p class="hint">Bitcoin24's five strategies. Each shows the freedom year it gives you.</p>
+        <p class="hint">Four of Bitcoin24's strategies, plus this simulator's Double Dipper. Each shows the freedom year it gives you.</p>
         <div class="seg n5" role="group" aria-label="Strategy" id="simStrats">
           <button type="button" data-strat="0" aria-pressed="false"><small>Normie</small><b></b></button>
           <button type="button" data-strat="1" aria-pressed="false"><small>BTC 10%</small><b></b></button>
           <button type="button" data-strat="2" aria-pressed="true"><small>BTC Maxi</small><b></b></button>
           <button type="button" data-strat="3" aria-pressed="false"><small>Double Maxi</small><b></b></button>
-          <button type="button" data-strat="4" aria-pressed="false"><small>Triple Maxi</small><b></b></button>
+          <button type="button" data-strat="4" aria-pressed="false" class="dd"><small>Double Dipper</small><b></b></button>
         </div>
         <p class="hint" id="stratHint"></p>
       </fieldset>
@@ -218,7 +227,7 @@
       </fieldset>
 
       <details class="sim-adv" id="simAdv">
-        <summary><span class="adv-title">Advanced: borrow or earn instead of selling</span><span class="adv-now" id="advNow"></span></summary>
+        <summary><span class="adv-title">OG Mode: borrow against your bitcoin, or swap some for STRC</span><span class="adv-now" id="advNow"></span></summary>
         <div class="adv-body">
           <p class="hint">From your freedom year, your costs come from shares, bonds and cash first, then from your bitcoin. Pick how your bitcoin pays its part. Each path shows the freedom year it gives you.</p>
           <div class="seg n3" role="group" aria-label="How bitcoin pays for your life" id="simPaths">
@@ -325,8 +334,8 @@
 
   <div class="sim-notes">
     <p>With the Bitcoin24 price model, bitcoin starts at your price today and grows at the model's rate for each calendar year. In the Base case that rate is 50% in 2025 and falls 2.5 points a year to a floor of 20%. Bear runs from 25% to 18%, falling 0.5 points a year. Bull runs from 75% to 25%, falling 5 points a year. Bitcoin24 stops at 2045. After that, the simulator lets bitcoin grow only as fast as the world's other assets, so its share stays at the 2045 level. The power-law model follows bitcoin's long-run trend (price ≈ 1.0117×10⁻¹⁷ × days since the genesis block, raised to the 5.82), scaled by your price path. Its trend price today is about <span id="trendToday"></span>. After 2045, in both models, bitcoin's yearly growth and your inflation ease toward 2%, the gap halving every 5 years, so neither compounds for ever (you can change this under Assumptions). Everything after 2045 is ours, not Saylor's. The plan ends in 2050: beyond it, too much will change for these numbers to mean much. Over that time bitcoin matures: loan rates and STRC's dividend fall in a straight line to the mortgage rate by 2050. The four-year cycle is ours too: at 0% bitcoin follows the smooth path; above it, bitcoin rises above the path every four years, falls the chosen share of its price the next year, and returns to the path, each fall 15% smaller than the last. Numbers in red are in a warning zone; the reason is listed under the results.</p>
-    <p>Your strategy acts today: it moves part of your shares, bonds and cash into bitcoin, and Double and Triple Maxi also borrow against your real estate. Your other assets grow at Bitcoin24's rates, with bond and cash yields taxed. Your mortgage grows at its rate and is never paid down. While you work, your pay covers your costs; if it does not, the gap comes out of your savings first, then out of what you own. From next year until your freedom year you invest what is left of your savings as your strategy says. From then on you stop earning and buying. Your costs rise at your inflation rate every year from today, so your first free year costs more than today's figure. Your real estate is never sold. What you own minus what you owe must stay above zero through 2050.</p>
-    <p>The freedom-year search, the years after it, and the tax, borrowing and STRC paths are this simulator's own additions to Bitcoin24. Sales use your average cost. A loan that reaches the lender's liquidation level ends the run. STRC facts: <a href="https://www.strategy.com/strc/learn">Strategy</a>, <a href="https://www.sec.gov/Archives/edgar/data/0001050446/000119312526286871/mstr-20260629.htm">SEC filing, June 2026</a>, <a href="https://www.strategy.com/press/strategy-announces-approval-of-strc-semi-monthly-dividends_06-08-2026">semi-monthly dividends</a>, CoinDesk in <a href="https://www.coindesk.com/markets/2026/06/01/strategy-holds-strc-dividend-at-11-5-for-fourth-straight-month">June</a> and <a href="https://www.coindesk.com/markets/2026/09/25/strategy-proposes-daily-dividends-to-bring-strc-back-toward-usd100">September 2026</a>. An illustration, not financial or tax advice. The simulator's code is on GitHub as <a href="https://github.com/darbsllim/sovereignty-simulator">a fork of Bitcoin24</a>.</p>
+    <p>Your strategy acts today: it moves part of your shares, bonds and cash into bitcoin, and Double Maxi and Double Dipper also borrow against your real estate. Double Dipper puts half of what it moves, and half of your savings, into STRC instead of bitcoin. Your other assets grow at Bitcoin24's rates, with bond and cash yields taxed. Your mortgage grows at its rate and is never paid down. While you work, your pay covers your costs; if it does not, the gap comes out of your savings first, then out of what you own. From next year until your freedom year you invest what is left of your savings as your strategy says. The share you set under Save some in STRC buys STRC at $100, and STRC's dividends buy more STRC until you are free. From then on you stop earning and buying. Your costs rise at your inflation rate every year from today, so your first free year costs more than today's figure. Your real estate is never sold. What you own minus what you owe must stay above zero through 2050.</p>
+    <p>The freedom-year search, the years after it, Double Dipper, saving in STRC, and the tax, borrowing and STRC paths are this simulator's own additions to Bitcoin24. Sales use your average cost. A loan that reaches the lender's liquidation level ends the run. STRC facts: <a href="https://www.strategy.com/strc/learn">Strategy</a>, <a href="https://www.sec.gov/Archives/edgar/data/0001050446/000119312526286871/mstr-20260629.htm">SEC filing, June 2026</a>, <a href="https://www.strategy.com/press/strategy-announces-approval-of-strc-semi-monthly-dividends_06-08-2026">semi-monthly dividends</a>, CoinDesk in <a href="https://www.coindesk.com/markets/2026/06/01/strategy-holds-strc-dividend-at-11-5-for-fourth-straight-month">June</a> and <a href="https://www.coindesk.com/markets/2026/09/25/strategy-proposes-daily-dividends-to-bring-strc-back-toward-usd100">September 2026</a>. An illustration, not financial or tax advice. The simulator's code is on GitHub as <a href="https://github.com/darbsllim/sovereignty-simulator">a fork of Bitcoin24</a>.</p>
   </div>
 </section>
 

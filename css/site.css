@@ -24,6 +24,7 @@
   --orange: #f7931a;
   --track: #3a3129;
   --bad: #ff8a7a;
+  --strc: #9fc4b6; /* STRC: the film's cold green-grey of paper money, lifted to read on black */
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -208,6 +209,25 @@ body.capture .cover, body.capture .ui, body.capture .page, body.capture .poster,
 @media (max-width: 480px) { .seg.n5 small { font-size: 12px; } .seg.n5 b { font-size: 14px; } }
 
 .sim-adv, .asm, .sim-math { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
+/* Saving in STRC: a fold-out in STRC's own colour, so it never reads as bitcoin. */
+.strc-save { border: 1px solid rgba(159, 196, 182, 0.28); border-left: 3px solid var(--strc); border-radius: 10px; background: rgba(159, 196, 182, 0.05); }
+.strc-save > summary { list-style: none; cursor: pointer; padding: 12px 14px; display: grid; grid-template-columns: 1ch minmax(0, 1fr); align-items: baseline; gap: 2px 10px; }
+.strc-save > summary::-webkit-details-marker { display: none; }
+.strc-save > summary::before { content: "+"; grid-row: 1 / span 2; font: 500 18px/1 "JetBrains Mono", ui-monospace, monospace; color: var(--strc); }
+.strc-save[open] > summary::before { content: "−"; }
+.strc-save > summary > span { grid-column: 2; }
+.strc-title { font-weight: 600; color: var(--strc); }
+.strc-split { font: 13px/1.4 "JetBrains Mono", ui-monospace, monospace; color: var(--muted); }
+.strc-split b { font-weight: 500; color: var(--orange); }
+.strc-split b.s { color: var(--strc); }
+.strc-save .control { padding: 0 14px 14px; }
+.strc-save output { color: var(--strc); }
+.sim .strc-save input[type=range]::-webkit-slider-runnable-track { background: linear-gradient(to right, var(--strc) var(--p, 50%), var(--track) var(--p, 50%)); }
+.sim .strc-save input[type=range]::-moz-range-progress { background: var(--strc); }
+.sim .strc-save input[type=range]::-webkit-slider-thumb { border-color: var(--strc); box-shadow: 0 0 0 6px rgba(159, 196, 182, 0.14); }
+.sim .strc-save input[type=range]::-moz-range-thumb { border-color: var(--strc); }
+.seg button.dd:not([aria-pressed="true"]) small { color: var(--strc); }
+.seg button.dd[aria-pressed="true"] { background: linear-gradient(90deg, var(--orange) 50%, var(--strc) 50%); }
 .sim-adv > summary, .asm > summary, .sim-math > summary { list-style: none; cursor: pointer; padding: 16px 18px; display: grid; grid-template-columns: 1ch minmax(0, 1fr); align-items: baseline; gap: 2px 12px; font-weight: 600; }
 .sim-adv > summary > span, .asm > summary > span { grid-column: 2; }
 .sim-math > summary::-webkit-details-marker { display: none; }

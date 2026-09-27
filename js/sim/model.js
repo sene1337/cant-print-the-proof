@@ -20,15 +20,20 @@ export const B24={
   mortgageShare:.50, mortgageRate:.05,                         // Individual!AE4 (50% of real estate), AE5
   horizon:2045
 };
-// Individual!E11:Y15. convert = share of non-real-estate assets moved to BTC in year one,
-// excess = share of excess earnings put into BTC, extraMortgage = new loan as a share of real estate value.
-export const STRATEGIES=[
+// Individual!E11:Y15: Bitcoin24's five strategies, as in the workbook. convert = share of non-real-estate assets moved
+// to BTC in year one, excess = share of excess earnings put into BTC, extraMortgage = new loan as a share of real estate value.
+export const B24_STRATEGIES=[
   {name:'Normie',      convert:0,  excess:0,  extraMortgage:0,   save:.25},
   {name:'BTC 10%',     convert:.1, excess:.1, extraMortgage:0,   save:.25},
   {name:'BTC Maxi',    convert:.8, excess:.8, extraMortgage:0,   save:.25},
   {name:'Double Maxi', convert:1,  excess:1,  extraMortgage:.25, save:.25},
   {name:'Triple Maxi', convert:1,  excess:1,  extraMortgage:.5,  save:.5}
 ];
+// The simulator's strategies: the first four of Bitcoin24's, then Double Dipper (the simulator's own): Double Maxi's
+// moves, with half of everything it buys going into STRC instead of bitcoin. strc = the share of the converted assets,
+// the new loan and the savings that goes into STRC.
+export const STRATEGIES=[...B24_STRATEGIES.slice(0,4),
+  {name:'Double Dipper', convert:1,  excess:1,  extraMortgage:.25, save:.25, strc:.5}];
 const capGrowth=k=>B24.inflationGrowth+B24.innovationGrowth+B24.monetization[k]; // Macro rows 55-60
 const impliedReturn=k=>(1+capGrowth(k))/(1+B24.dilution[k])-1;                   // Macro rows 69-72
 
@@ -110,7 +115,8 @@ function toward(r,end,year,y,y0){return end==null?r:r+(end-r)*Math.min(1,Math.ma
 
 // One life, year by year from startYear to endYear. s is the freedom year (Infinity = never).
 // p: {startYear,endYear,stack,assets,earnings,save,strategy,mix,returns,tax,earningsGrowth,mortgageShare,mortgageRate,
-//     spend,inflation,  basis,cgt,path,borrow:{rate,rateEnd,rateYear,maxLtv,liqLtv},strc:{share,rate,rateEnd,rateYear,roc},ease,workGap}
+//     spend,inflation,  basis,cgt,path,borrow:{rate,rateEnd,rateYear,maxLtv,liqLtv},strc:{share,rate,rateEnd,rateYear,roc},ease,workGap,
+//     strcSave (share of each year's savings into STRC; default the strategy's strc)}
 // With cgt 0 and path 'sell' this is the Bitcoin24-based model of the first version exactly.
 // Additions (the simulator's own, not Bitcoin24):
 //   basis: average cost per BTC of the starting stack. Bitcoin bought later adds its cost. Sales use average cost.
@@ -129,7 +135,11 @@ function simulate(p,price,s){
   const cgt=p.cgt||0,path=p.path||'sell',B=p.borrow||{rate:0,maxLtv:0,liqLtv:1},S=p.strc||{share:0,rate:0,roc:true};
   let re=p.assets*m.realEstate;                                          // Individual!D28
   const extra=st.extraMortgage*re;                                       // Individual!T14/Y14
-  const bought0=(st.convert*nonRE*p.assets+extra)/p0;
+  // STRC as savings (the simulator's own): strcMove of what the strategy moves today, and strcSave of each year's
+  // savings, buy STRC at its $100 stated amount instead of bitcoin.
+  const strcMove=st.strc||0,strcSave=p.strcSave!=null?p.strcSave:(st.strc||0);
+  const moved=st.convert*nonRE*p.assets+extra,strc0=moved*strcMove;
+  const bought0=(moved-strc0)/p0;
   let btc=p.stack+bought0;                                               // Individual!D26, D23
   let basis=p.stack*(p.basis!=null?p.basis:p0)+bought0*p0;               // total cost of the bitcoin held
   let eq=p.assets*m.equity*(1-st.convert),                               // Individual!D27
@@ -139,8 +149,8 @@ function simulate(p,price,s){
   let excess=p.save*p.earnings;                                          // Individual!D20 (year one is not invested)
   let earn=p.earnings;                                                   // this year's pay
   const W=p.workGap===true;  // the simulator's own: while working, costs your pay leaves uncovered come out of savings, then assets
-  let loan=0,strc=0,strcBasis=0,taxPaid=0,taxBtc=0,peakLtv=0; // taxBtc: bitcoin given up to pay tax
-  const netStart=btc*p0+eq+re+bd+cu-debt,rows=[];
+  let loan=0,strc=strc0,strcBasis=strc0,taxPaid=0,taxBtc=0,peakLtv=0; // taxBtc: bitcoin given up to pay tax
+  const netStart=btc*p0+eq+re+bd+cu+strc-debt,rows=[];
   let ok=true,failYear=null,failReason=null,forced=0;
   const fail=(why)=>{if(ok)failReason=why;ok=false;};
   const loanRate=(y)=>toward(B.rate,B.rateEnd,B.rateYear??p.endYear,y,y0),divRate=(y)=>toward(S.rate,S.rateEnd,S.rateYear??p.endYear,y,y0);
@@ -154,6 +164,22 @@ function simulate(p,price,s){
     if(n>btc){left=(n-btc)*per;n=btc;}
     taxPaid+=n*gain*cgt;taxBtc+=n*gain*cgt/px;basis-=n*avg;btc-=n;loan=Math.max(0,loan-keepLtv*n*px);
     return [n,left];
+  };
+  // STRC's dividend for the year: with roc, a tax-free return of capital until it has returned the cost, then taxed as a
+  // gain; without it, taxed as income. Returns the dividend after tax.
+  const dividend=(y)=>{
+    if(!(strc>0))return 0;
+    const div=strc*divRate(y);let tax;
+    if(S.roc){const back=Math.min(div,strcBasis);strcBasis-=back;tax=(div-back)*cgt;}
+    else tax=div*p.tax;
+    taxPaid+=tax;return div-tax;
+  };
+  // Sell STRC at $100 to raise `cash` after tax; returns the cash still missing.
+  const sellStrc=(cash)=>{
+    if(!(cash>0)||!(strc>0))return cash;
+    const gf=Math.max(0,(strc-strcBasis)/strc),per=Math.max(1e-9,1-gf*cgt);
+    const v=Math.min(strc,cash/per),tax=v*gf*cgt;
+    taxPaid+=tax;strcBasis-=v*(strcBasis/strc);strc-=v;return cash-(v-tax);
   };
   const E=p.ease||null;
   let spend=0;
@@ -170,8 +196,12 @@ function simulate(p,price,s){
       if(loan>0)loan*=1+loanRate(y);                                     // interest added to the bitcoin loan
     }
     const short=W&&y<s?Math.max(0,spend-(1-p.save)*earn):0;              // costs the rest of your pay does not cover
+    if(i>0&&y<s&&strc>0){income=dividend(y);strc+=income;strcBasis+=income;} // while working, STRC's dividend is reinvested
+                                                                         // (from next year, like every other return)
     if(i>0&&y<s){
-      const inv=Math.max(0,excess-short);                                // savings go to costs first
+      const inv0=Math.max(0,excess-short);                               // savings go to costs first
+      const toStrc=inv0*strcSave,inv=inv0-toStrc;
+      strc+=toStrc;strcBasis+=toStrc;
       bought=inv*st.excess/px;btc+=bought;basis+=inv*st.excess;          // row 22
       const rest=inv*(1-st.excess);
       if(nonRE>0){eq+=rest*m.equity/nonRE;bd+=rest*m.bonds/nonRE;cu+=rest*m.currency/nonRE;}
@@ -182,20 +212,17 @@ function simulate(p,price,s){
       t=Math.min(eq,gap);eq-=t;gap-=t;
       t=Math.min(bd,gap);bd-=t;gap-=t;
       t=Math.min(cu,gap);cu-=t;gap-=t;
-      if(gap>0){const [n,left]=sellFor(gap,px);sold+=n;if(left>1e-6*spend)fail('ran out');}
+      if(gap>0){const [n,left]=sellFor(gap,px);sold+=n;if(sellStrc(left)>1e-6*spend)fail('ran out');}
     }
     if(y>=s){                                                            // free: no earnings
       if(path==='strc'&&y===s&&S.share>0&&btc>0){                         // the swap, once, in the freedom year
         const coins=btc*S.share,avg=basis/btc,gain=Math.max(0,px-avg),tax=coins*gain*cgt;
         taxPaid+=tax;taxBtc+=tax/px;basis-=coins*avg;btc-=coins;sold+=coins;
-        strc=coins*px-tax;strcBasis=strc;
+        strc+=coins*px-tax;strcBasis+=coins*px-tax;
       }
       let need=spend,t;
       if(strc>0){                                                        // dividends first
-        const div=strc*divRate(y);let tax;
-        if(S.roc){const back=Math.min(div,strcBasis);strcBasis-=back;tax=(div-back)*cgt;}
-        else tax=div*p.tax;
-        taxPaid+=tax;income=div-tax;
+        income=dividend(y);
         if(income>=need){cu+=income-need;need=0;}else need-=income;
       }
       t=Math.min(eq,need);eq-=t;need-=t;                                 // then equity, bonds, cash
@@ -217,11 +244,7 @@ function simulate(p,price,s){
         loan+=take;need-=take;
       }
       if(need>0){const [n,left]=sellFor(need,px,path==='borrow'&&loan>0?B.maxLtv:0);sold+=n;need=left;}
-      if(need>0&&strc>0){                                                // last, sell STRC at $100
-        const gf=Math.max(0,(strc-strcBasis)/strc),per=Math.max(1e-9,1-gf*cgt);
-        const v=Math.min(strc,need/per),tax=v*gf*cgt;
-        taxPaid+=tax;strcBasis-=v*(strcBasis/strc);strc-=v;need-=v-tax;
-      }
+      need=sellStrc(need);                                               // last, sell STRC at $100
       if(need>1e-6*spend)fail('ran out');                                // costs not met this year
     }
     const col=btc*px,ltv=col>0?loan/col:(loan>0?Infinity:0);

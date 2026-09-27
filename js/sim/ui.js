@@ -7,10 +7,10 @@ const Y0 = 2026, YEND = 2050, SMAX = YEND - 1, H45 = M.B24.horizon; // the plan 
 const $ = (id) => document.getElementById(id);
 const CASES = { bear: { name: 'Bear', mult: 0.5, pl: 'half of trend' }, base: { name: 'Base', mult: 1, pl: 'power-law trend' }, bull: { name: 'Bull', mult: 1.6, pl: '1.6× trend' } };
 const PATHS = { sell: 'Selling bitcoin', borrow: 'Borrowing against it', strc: 'Swapping some for STRC' };
-const state = { model: 'b24', caseKey: 'base', strat: 2, path: 'sell', saveOverride: null, price: 0, priceSource: 'model', live: 'pending',
+const state = { model: 'b24', caseKey: 'base', strat: 2, path: 'sell', saveOverride: null, strcOverride: null, price: 0, priceSource: 'model', live: 'pending',
   stack: 3, basis: 30000, cgt: 0.25, asm: M.defaultAssumptions() };
 const el = { assets: $('sAssets'), earn: $('sEarn'), save: $('sSave'), spend: $('sSpend'), inf: $('sInf'), vol: $('sVol'),
-  rate: $('sRate'), ltv: $('sLtv'), liq: $('sLiq'), share: $('sShare'), div: $('sDiv') };
+  rate: $('sRate'), ltv: $('sLtv'), liq: $('sLiq'), share: $('sShare'), div: $('sDiv'), strcSave: $('sStrcSave') };
 const btcFrom = (v) => (v <= 0 ? 0 : 0.1 * Math.pow(21000, v / 1000)); // 0.1 to 2,100 BTC
 const btcTo = (b) => (b <= 0 ? 0 : Math.min(1000, Math.max(1, 1000 * Math.log(b / 0.1) / Math.log(21000))));
 const assetsFrom = (v) => (v <= 0 ? 0 : 1e4 * Math.pow(10, 4 * v / 1000));
@@ -51,7 +51,8 @@ const currentCase = () => state.asm.cases[state.caseKey];
 function paramsFor(i, path = state.path) {
   const st = M.STRATEGIES[i], a = state.asm;
   return { startYear: Y0, endYear: YEND, stack: state.stack, assets: assetsFrom(+el.assets.value), earnings: earnFrom(+el.earn.value),
-    save: state.saveOverride != null ? state.saveOverride : st.save, strategy: st, mix: a.mix, returns: a.returns, tax: a.incomeTax,
+    save: state.saveOverride != null ? state.saveOverride : st.save, strcSave: state.strcOverride != null ? state.strcOverride : (st.strc || 0),
+    strategy: st, mix: a.mix, returns: a.returns, tax: a.incomeTax,
     earningsGrowth: a.earningsGrowth, mortgageShare: a.mortgageShare, mortgageRate: a.mortgageRate,
     spend: spendFrom(+el.spend.value), inflation: +el.inf.value / 100,
     basis: state.basis, cgt: state.cgt, path,
@@ -70,20 +71,32 @@ const fit = (input) => { input.style.width = Math.max(4, input.value.length + 0.
 function stratText(st) {
   if (!st.convert && !st.excess) return 'Normie keeps what you own as it is. Your savings go into shares, bonds and cash.';
   const part = (v) => (v >= 1 ? 'all' : Math.round(v * 100) + '%');
-  let t = `${st.name} moves ${part(st.convert)} of your shares, bonds and cash into bitcoin today`;
-  if (st.extraMortgage) t += `, plus a new loan of ${Math.round(st.extraMortgage * 100)}% of your real estate's value`;
-  return t + `. ${st.excess >= 1 ? 'All' : part(st.excess)} of your savings buy bitcoin each year.`;
+  const loan = st.extraMortgage ? `, plus a new loan of ${Math.round(st.extraMortgage * 100)}% of your real estate's value` : '';
+  if (st.strc) { // Double Dipper: what it moves and what you save are split between bitcoin and STRC
+    const h = (v) => (Math.abs(v - 0.5) < 1e-9 ? 'half' : Math.round(v * 100) + '%');
+    return `${st.name} moves ${part(st.convert)} of your shares, bonds and cash today${loan}: ${h(1 - st.strc)} into bitcoin, ${h(st.strc)} into STRC. `
+      + `Each year, ${h((1 - st.strc) * st.excess)} of your savings buy bitcoin and ${h(st.strc)} buy STRC.`;
+  }
+  return `${st.name} moves ${part(st.convert)} of your shares, bonds and cash into bitcoin today${loan}. ${st.excess >= 1 ? 'All' : part(st.excess)} of your savings buy bitcoin each year.`;
 }
 function syncStrategy() {
-  const st = M.STRATEGIES[state.strat], d = Math.round(st.save * 100);
+  const st = M.STRATEGIES[state.strat], d = Math.round(st.save * 100), ds = Math.round((st.strc || 0) * 100);
+  const who = M.B24_STRATEGIES.includes(st) ? `Bitcoin24's ${st.name}` : st.name;
   press('#simStrats', (b) => +b.dataset.strat === state.strat);
   $('stratHint').textContent = stratText(st);
   if (state.saveOverride == null) {
-    el.save.value = d; $('saveHintText').textContent = `Bitcoin24's default for ${st.name}. Invested every year from ${Y0 + 1} until you're free. If your costs need more than the rest of your pay, the gap comes out of these savings first, then out of what you own.`; $('saveReset').hidden = true;
+    el.save.value = d; $('saveHintText').textContent = `The default for ${who}. Invested every year from ${Y0 + 1} until you're free. If your costs need more than the rest of your pay, the gap comes out of these savings first, then out of what you own.`; $('saveReset').hidden = true;
   } else {
     el.save.value = Math.round(state.saveOverride * 100);
-    $('saveHintText').textContent = `Your choice. Bitcoin24's ${st.name} saves ${d}%.`;
+    $('saveHintText').textContent = `Your choice. ${who} saves ${d}%.`;
     $('saveReset').textContent = `Use ${d}%`; $('saveReset').hidden = false;
+  }
+  if (state.strcOverride == null) {
+    el.strcSave.value = ds; $('strcSaveText').textContent = ds ? `The default for ${st.name}.` : `${st.name} puts none of your savings into STRC.`; $('strcReset').hidden = true;
+  } else {
+    el.strcSave.value = Math.round(state.strcOverride * 100);
+    $('strcSaveText').textContent = `Your choice. ${st.name} puts ${ds ? ds + '%' : 'none'} into STRC.`;
+    $('strcReset').textContent = `Use ${ds}%`; $('strcReset').hidden = false;
   }
 }
 
@@ -186,6 +199,7 @@ function chart(rows, s, runOut, liquidated) {
 // The year-by-year math behind the chart, drawn only while it is open.
 const coins = (b) => { const a = Math.abs(b); return a < 0.0005 ? '0' : a >= 100 ? b.toFixed(1) : a >= 1 ? b.toFixed(2) : b.toFixed(3); };
 function mathTable(rows, s, runOut) {
+  const held = rows.some((q) => q.strc > 0), early = s != null && rows.some((q) => q.strc > 0 && q.y < s);
   let prevTax = 0, html = '';
   for (const q of rows) {
     const flow = q.bought - q.sold, tax = q.taxBtc - prevTax, left = Math.max(0, q.btc - (q.loan > 0 ? q.loan / q.price : 0));
@@ -195,15 +209,17 @@ function mathTable(rows, s, runOut) {
     html += `<tr${cls ? ` class="${cls}"` : ''}><td>${q.y}<small>${tag}</small></td><td>${big(q.price)}</td><td>${big(q.spend)}</td>`
       + `<td>${flow > 0 ? '+' : flow < 0 ? '−' : ''}${coins(Math.abs(flow))}</td><td>${coins(tax)}</td>`
       + (state.path === 'borrow' ? `<td>${q.loan > 0 ? big(q.loan) + ' · ' + Math.round(Math.min(q.ltv, 9.99) * 100) + '%' : '—'}</td>` : '')
-      + (state.path === 'strc' ? `<td>${q.income > 0 ? big(q.income) : '—'}</td>` : '')
+      + (held ? `<td>${q.income > 0 ? big(q.income) : '—'}</td>` : '')
       + `<td>${coins(left)}</td></tr>`;
   }
   $('mathRows').innerHTML = html;
   $('thLoan').hidden = state.path !== 'borrow';
-  $('thDiv').hidden = state.path !== 'strc';
+  $('thDiv').hidden = !held;
   const note = { sell: 'Bitcoin sold covers what shares, bonds and cash cannot, plus the tax on the sale.',
     borrow: 'Bitcoin left is net of the loan. Sales happen only when the loan reaches your cap.',
-    strc: 'STRC\'s dividend pays your costs first, so it cuts the bitcoin you sell. In your freedom year, bitcoin sold includes the coins swapped for STRC.' }[state.path];
+    strc: 'In your freedom year, bitcoin sold includes the coins swapped for STRC.' }[state.path]
+    + (early ? ' While you work, STRC\'s dividend buys more STRC.' : '')
+    + (held ? ' Once you are free, STRC\'s dividend pays your costs first, so you sell less bitcoin.' : '');
   const lead = s == null ? 'You are not free by ' + SMAX + ', so this shows what would happen if you stopped now.' : 'Working years are grey: your pay covers your costs, and any gap shows as bitcoin sold.';
   $('mathNote').textContent = `${lead} Dollars are dollars of each year. Your costs grow at your inflation rate and ease after ${state.asm.ease.after}, and so does bitcoin's growth. ${note}`;
 }
@@ -233,7 +249,8 @@ function warnings(p, pp, r, s, o) {
     }
     if (s == null && r.failReason === 'liquidated') why.push(`In ${r.failYear}, a crash pushes the loan past the lender's ${pct(liq)} of your bitcoin's value, and the lender sells.`);
   }
-  if (state.path === 'strc' && p.strc.rate > 0.12) { red.add('oDiv'); why.push('A dividend above 12% today is more than STRC had paid by September 2026.'); }
+  const strcUsed = state.path === 'strc' || p.strcSave > 0 || p.strategy.strc > 0;
+  if (strcUsed && p.strc.rate > 0.12) { red.add('oDiv'); why.push('A dividend above 12% today is more than STRC had paid by September 2026.'); }
   for (const id of RED) $(id).classList.toggle('warn', red.has(id));
   const list = $('simWarn'), html = why.map((t) => `<li>${t}</li>`).join('');
   if (list.innerHTML !== html) list.innerHTML = html;
@@ -248,6 +265,11 @@ function update() {
   $('oAssets').textContent = p.assets ? money(p.assets) : 'Nothing';
   $('oEarn').textContent = p.earnings ? money(p.earnings) : 'Nothing';
   $('oSave').textContent = Math.round(p.save * 100) + '%';
+  $('oStrcSave').textContent = el.strcSave.value + '%';
+  const f1 = (x) => String(+(x * 100).toFixed(1)) + '%', ex = p.strategy.excess, toS = p.strcSave;
+  const split = p.save > 0 ? `Of your pay: <b>${f1(p.save * (1 - toS) * ex)}</b>&nbsp;to&nbsp;bitcoin, <b class="s">${f1(p.save * toS)}</b>&nbsp;to&nbsp;STRC`
+    + (ex < 1 ? `, ${f1(p.save * (1 - toS) * (1 - ex))}&nbsp;to&nbsp;shares, bonds and cash` : '') : 'You save none of your pay.';
+  if ($('saveSplit').innerHTML !== split) $('saveSplit').innerHTML = split;
   $('oSpend').textContent = money(p.spend);
   $('oInf').textContent = el.inf.value + '%';
   $('oRate').textContent = el.rate.value + '%';
@@ -266,7 +288,7 @@ function update() {
       : `Free in ${s}, ${yrs} year${yrs > 1 ? 's' : ''} from now. What you own then pays for your life through ${YEND}.`;
   if ($('simVerdict').textContent !== verdict) $('simVerdict').textContent = verdict; // a live region: speak only real changes
   $('sBtc').setAttribute('aria-valuetext', btcFmt(state.stack));
-  for (const [input, out] of [[el.assets, 'oAssets'], [el.earn, 'oEarn'], [el.save, 'oSave'], [el.spend, 'oSpend'], [el.inf, 'oInf'],
+  for (const [input, out] of [[el.assets, 'oAssets'], [el.earn, 'oEarn'], [el.save, 'oSave'], [el.strcSave, 'oStrcSave'], [el.spend, 'oSpend'], [el.inf, 'oInf'],
     [el.rate, 'oRate'], [el.ltv, 'oLtv'], [el.liq, 'oLiq'], [el.share, 'oShare'], [el.div, 'oDiv'], [el.vol, 'oVol']]) input.setAttribute('aria-valuetext', $(out).textContent);
   $('sBasis').setAttribute('aria-valuetext', '$' + Math.round(state.basis).toLocaleString('en-US')); $('sCgt').setAttribute('aria-valuetext', String(+(state.cgt * 100).toFixed(2)) + '%');
   const E = state.asm.ease;
@@ -290,9 +312,9 @@ function update() {
     A = [`Bitcoin sold to stay under your cap, through ${YEND}`, btcFmt(r.forced)];
     B = ['Price fall your loan can take at its riskiest', r.peakLtv > 0 ? Math.floor(r.crashMargin * 100 + 1e-9) + '%' : 'No loan'];
   } else if (state.path === 'strc') {
-    A = ['Put into STRC in your freedom year, after tax', at && at.strc > 0 ? big(at.strc) : '—'];
+    A = ['STRC you own in your freedom year', at && at.strc > 0 ? big(at.strc) : '—'];
     const divAt = s == null ? p.strc.rate : M.toward(p.strc.rate, p.strc.rateEnd, p.strc.rateYear, s, Y0); // the rate falls toward the mortgage rate
-    B = [`STRC dividends in your first free year, at ${pct(divAt)}`, at && at.strc > 0 ? big(at.strc * divAt) : '—'];
+    B = [`STRC dividends in your first free year, at ${pct(divAt)}, after tax`, at && at.income > 0 ? big(at.income) : '—'];
   } else {
     A = ['Bitcoin sold in your first free year', at ? btcFmt(at.sold) : '—'];
     B = ['Of that, sold to pay the tax', at ? btcFmt(at.taxBtc - (before ? before.taxBtc : 0)) : '—'];
@@ -310,6 +332,7 @@ function update() {
 function init() {
   Object.values(el).forEach((i) => i.addEventListener('input', () => {
     if (i === el.save) { state.saveOverride = +el.save.value / 100; syncStrategy(); }
+    if (i === el.strcSave) { state.strcOverride = +el.strcSave.value / 100; syncStrategy(); }
     update();
   }));
   $('sRoc').addEventListener('change', update);
@@ -339,6 +362,7 @@ function init() {
   document.querySelectorAll('#simStrats button').forEach((b) => b.addEventListener('click', () => { state.strat = +b.dataset.strat; syncStrategy(); update(); }));
   document.querySelectorAll('#simPaths button').forEach((b) => b.addEventListener('click', () => { state.path = b.dataset.path; syncPath(); update(); }));
   $('saveReset').addEventListener('click', () => { state.saveOverride = null; syncStrategy(); update(); el.save.focus(); });
+  $('strcReset').addEventListener('click', () => { state.strcOverride = null; syncStrategy(); update(); el.strcSave.focus(); });
   document.querySelectorAll('#simModels button').forEach((b) => b.addEventListener('click', () => { state.model = b.dataset.model; syncCases(); priceHint(); update(); }));
   document.querySelectorAll('#simCases button').forEach((b) => b.addEventListener('click', () => {
     state.caseKey = b.dataset.case; if (state.priceSource === 'model') useModelPrice();
