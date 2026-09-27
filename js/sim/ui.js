@@ -195,13 +195,15 @@ function mathTable(rows, s, runOut) {
     html += `<tr${cls ? ` class="${cls}"` : ''}><td>${q.y}<small>${tag}</small></td><td>${big(q.price)}</td><td>${big(q.spend)}</td>`
       + `<td>${flow > 0 ? '+' : flow < 0 ? '−' : ''}${coins(Math.abs(flow))}</td><td>${coins(tax)}</td>`
       + (state.path === 'borrow' ? `<td>${q.loan > 0 ? big(q.loan) + ' · ' + Math.round(Math.min(q.ltv, 9.99) * 100) + '%' : '—'}</td>` : '')
+      + (state.path === 'strc' ? `<td>${q.income > 0 ? big(q.income) : '—'}</td>` : '')
       + `<td>${coins(left)}</td></tr>`;
   }
   $('mathRows').innerHTML = html;
   $('thLoan').hidden = state.path !== 'borrow';
+  $('thDiv').hidden = state.path !== 'strc';
   const note = { sell: 'Bitcoin sold covers what shares, bonds and cash cannot, plus the tax on the sale.',
     borrow: 'Bitcoin left is net of the loan. Sales happen only when the loan reaches your cap.',
-    strc: 'In your freedom year, bitcoin sold includes the coins swapped for STRC.' }[state.path];
+    strc: 'STRC\'s dividend pays your costs first, so it cuts the bitcoin you sell. In your freedom year, bitcoin sold includes the coins swapped for STRC.' }[state.path];
   const lead = s == null ? 'You are not free by ' + SMAX + ', so this shows what would happen if you stopped now.' : 'Working years are grey: your pay covers your costs, and any gap shows as bitcoin sold.';
   $('mathNote').textContent = `${lead} Dollars are dollars of each year. Your costs grow at your inflation rate and ease after ${state.asm.ease.after}, and so does bitcoin's growth. ${note}`;
 }
@@ -289,7 +291,8 @@ function update() {
     B = ['Price fall your loan can take at its riskiest', r.peakLtv > 0 ? Math.floor(r.crashMargin * 100 + 1e-9) + '%' : 'No loan'];
   } else if (state.path === 'strc') {
     A = ['Put into STRC in your freedom year, after tax', at && at.strc > 0 ? big(at.strc) : '—'];
-    B = ['STRC dividends per year, before tax', at && at.strc > 0 ? big(at.strc * p.strc.rate) : '—'];
+    const divAt = s == null ? p.strc.rate : M.toward(p.strc.rate, p.strc.rateEnd, p.strc.rateYear, s, Y0); // the rate falls toward the mortgage rate
+    B = [`STRC dividends in your first free year, at ${pct(divAt)}`, at && at.strc > 0 ? big(at.strc * divAt) : '—'];
   } else {
     A = ['Bitcoin sold in your first free year', at ? btcFmt(at.sold) : '—'];
     B = ['Of that, sold to pay the tax', at ? btcFmt(at.taxBtc - (before ? before.taxBtc : 0)) : '—'];
