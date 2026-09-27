@@ -6,6 +6,9 @@ three.js as the song plays, and **every frame is a mined proof-of-work block** y
 
 **Watch it:** https://sene1337.github.io/cant-print-the-proof/
 
+Below the film, the same page has the **Sovereignty simulator**, which finds your freedom year, and
+**The Construct**, which shows what a quantum computer can and can't do to Bitcoin.
+
 ## Every frame is a block
 
 The film runs at 30 frames a second for 3:04, so it has 5,521 frames. Each frame has its own block:
@@ -69,6 +72,14 @@ your way to 2050. The answer stands in cast metal on the film's wet mirror; the 
   lining figures (`data/sim-glyphs.json`).
 
 An illustration, not financial or tax advice.
+
+## But what about quantum?
+
+Below the simulator, the page embeds [The Construct](https://sene1337.github.io/quantum-construct/): zoom into
+the math of a Bitcoin key, then out to the machines that would be needed to attack it, with every number
+sourced. A quantum computer can't print the proof either: mining holds. The weak spot is keys that are already
+visible on the chain, and Bitcoin has fixes in draft. The Construct is its own project:
+[sene1337/quantum-construct](https://github.com/sene1337/quantum-construct).
 
 ## Run it locally
 
