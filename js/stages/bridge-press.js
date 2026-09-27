@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { studioEnv } from '../film.js';
 import { normalFromHeight } from '../tex.js';
 import { bridgeNote } from '../props/bridge-note.js';
+import { NoteCloud, NOTE } from '../props/notes.js';
 import { clamp, hash1, lerp, rng, smooth } from '../util.js';
 
 export const PRESS = {
@@ -58,35 +59,33 @@ function grayNote(note, contrast) {
 }
 
 // A printing plate: rows of engraved notes wrapped around the cylinder (canvas x = around, y = along the axis).
+// Every plate on the roller is the same, so the texture is one plate at high resolution, repeated 16 times around and
+// 8 along. (The whole roller in one 1024 x 512 texture left each note about 60 pixels, and the close-up blew them up
+// into blocks.) One plate is 0.55 around by 1.25 along the roller, so 256 x 512 pixels keeps its pixels square.
 function plateTextures(note) {
-  const W = 1024, H = 512;
-  const col = canvas(W, H), g = col.getContext('2d');
-  const hc = canvas(W, H), h = hc.getContext('2d');
-  g.fillStyle = '#c9cfcb'; g.fillRect(0, 0, W, H);
-  h.fillStyle = '#ffffff'; h.fillRect(0, 0, W, H);
-  const rows = 16, lanes = 8;
-  const cw = W / rows, ch = H / lanes;
+  const ROWS = 16, LANES = 8, cw = 256, ch = 512;
+  const col = canvas(cw, ch), g = col.getContext('2d');
+  const hc = canvas(cw, ch), h = hc.getContext('2d');
+  g.fillStyle = '#c9cfcb'; g.fillRect(0, 0, cw, ch);
+  h.fillStyle = '#ffffff'; h.fillRect(0, 0, cw, ch);
   const gA = grayNote(note, 1.6), gB = grayNote(note, 2.2);
-  for (let r = 0; r < rows; r++) {
-    for (let l = 0; l < lanes; l++) {
-      const x = r * cw, y = l * ch;
-      for (const [ctx, src, alpha] of [[g, gA, 0.55], [h, gB, 1]]) {
-        ctx.save();
-        ctx.translate(x + cw / 2, y + ch / 2);
-        ctx.rotate(Math.PI / 2);
-        ctx.globalAlpha = alpha;
-        ctx.globalCompositeOperation = 'multiply';
-        ctx.drawImage(src, -ch * 0.46, -cw * 0.44, ch * 0.92, cw * 0.88);
-        ctx.restore();
-      }
-      // the plate border groove
-      g.strokeStyle = 'rgba(30,36,33,0.7)'; g.lineWidth = 2; g.strokeRect(x + 2, y + 2, cw - 4, ch - 4);
-      h.strokeStyle = '#000'; h.lineWidth = 2; h.strokeRect(x + 2, y + 2, cw - 4, ch - 4);
-    }
+  for (const [ctx, src, alpha] of [[g, gA, 0.55], [h, gB, 1]]) {
+    ctx.save();
+    ctx.translate(cw / 2, ch / 2);
+    ctx.rotate(Math.PI / 2);
+    ctx.globalAlpha = alpha;
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.drawImage(src, -ch * 0.46, -cw * 0.44, ch * 0.92, cw * 0.88);
+    ctx.restore();
   }
+  // the plate border groove
+  g.strokeStyle = 'rgba(30,36,33,0.7)'; g.lineWidth = 6; g.strokeRect(7, 7, cw - 14, ch - 14);
+  h.strokeStyle = '#000'; h.lineWidth = 6; h.strokeRect(7, 7, cw - 14, ch - 14);
   const map = texOf(col, { repeat: true });
-  const normal = normalFromHeight(hc, 1.2, 1);
+  map.repeat.set(ROWS, LANES);
+  const normal = normalFromHeight(hc, 1.2, 2);
   normal.wrapS = normal.wrapT = THREE.RepeatWrapping;
+  normal.repeat.set(ROWS, LANES);
   return { map, normal };
 }
 
@@ -397,6 +396,58 @@ export async function pressStage(film) {
   sea.rotation.x = -Math.PI / 2;
   sea.position.set(0, -13, 260);
   scene.add(sea);
+
+  // The paper heaps up instead of lying flat. Under each printer, where its sheet pours in, it piles into a long
+  // mound; low drifts run between the mounds; loose notes lie on top at every angle. The heap is a displaced sheet over
+  // the part of the sea the wide shot sees, printed exactly like the flat sea around it (same carpet, same placement),
+  // and it settles to the flat sea at its far edges. Heap and sea rise together.
+  const heap = new THREE.Group();
+  scene.add(heap);
+  const unitXs = [0];
+  for (let i = 1; i <= PRESS.waveOn.length; i++) unitXs.push(i * PRESS.spacing, -i * PRESS.spacing);
+  const vnoise = (x, z) => {
+    const xi = Math.floor(x), zi = Math.floor(z), fx = x - xi, fz = z - zi;
+    const h = (a, b) => hash1(a * 7919 + b * 104729 + 13);
+    const sx = fx * fx * (3 - 2 * fx), sz = fz * fz * (3 - 2 * fz);
+    return lerp(lerp(h(xi, zi), h(xi + 1, zi), sx), lerp(h(xi, zi + 1), h(xi + 1, zi + 1), sx), sz);
+  };
+  const HX = 104, HZ0 = -0.6, HZ1 = 64;
+  const heapHeight = (x, z) => {
+    let h = 0;
+    for (const ux of unitXs) { const dx = (x - ux) / 6.2, dz = (z - 4.2) / 3.6; h += 2.4 * Math.exp(-(dx * dx + dz * dz)); }
+    h += 0.75 * vnoise(x * 0.11, z * 0.11) + 0.35 * vnoise(x * 0.27 + 40, z * 0.27 + 40);
+    const e = clamp(Math.min((HX - Math.abs(x)) / 18, (HZ1 - z) / 22));
+    return 0.06 + h * e * e * (3 - 2 * e);
+  };
+  {
+    const geo = new THREE.PlaneGeometry(2 * HX, HZ1 - HZ0, 350, 110);
+    const pos = geo.attributes.position, uv = geo.attributes.uv, cz = (HZ0 + HZ1) / 2;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), z = cz - pos.getY(i); // laid flat the way the sea is: local +y runs toward -z
+      pos.setXYZ(i, x, heapHeight(x, z), z);
+      uv.setXY(i, (x + 360) / 720, (620 - z) / 720); // the flat sea's own placement of the carpet
+    }
+    geo.computeVertexNormals();
+    heap.add(new THREE.Mesh(geo, sea.material));
+  }
+  const loose = new NoteCloud(noteTex, 2600, { emissive: 0.05, sheen: 0.1 });
+  loose.material.color.setRGB(0.66, 0.74, 0.68); // the same green-grey as the carpet under them, not white
+  loose.setFlutter(0);
+  {
+    const R = rng(203), up = new THREE.Vector3(0, 1, 0), n = new THREE.Vector3();
+    const qSlope = new THREE.Quaternion(), qYaw = new THREE.Quaternion(), qFlat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2), qTip = new THREE.Quaternion(), eul = new THREE.Euler();
+    loose.layout(2600, (i, d) => {
+      const x = lerp(-40, HX - 8, R()), z = lerp(0.3, 44, Math.pow(R(), 1.4)), e = 0.25;
+      n.set(-(heapHeight(x + e, z) - heapHeight(x - e, z)) / (2 * e), 1, -(heapHeight(x, z + e) - heapHeight(x, z - e)) / (2 * e)).normalize();
+      qSlope.setFromUnitVectors(up, n);
+      qYaw.setFromAxisAngle(up, R() * Math.PI * 2);
+      qTip.setFromEuler(eul.set((R() - 0.5) * 0.7, (R() - 0.5) * 0.3, (R() - 0.5) * 0.7));
+      d.quaternion.copy(qSlope).multiply(qYaw).multiply(qFlat).multiply(qTip);
+      d.position.set(x, heapHeight(x, z) + 0.04 + Math.pow(R(), 3) * 0.3, z); // some lie on others
+      d.scale.setScalar((1.25 + R() * 0.25) / NOTE.W);
+    });
+  }
+  heap.add(loose);
   const heroSpot = new THREE.SpotLight(0xe8fff0, 60, 40, 0.62, 0.7, 1.3);
   heroSpot.position.set(0, 11, 9);
   heroSpot.target.position.set(0, -3, 5);
@@ -433,6 +484,8 @@ export async function pressStage(film) {
       }
       sea.position.y = seaLevel(t);
       sea.visible = true;
+      heap.position.y = seaLevel(t); // the heap's heights are measured from the sea's surface
+      heap.visible = true;
       machine.visible = true;
       tubes.visible = true;
       nipLight.intensity = 1.2;
