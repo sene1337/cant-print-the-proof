@@ -92,24 +92,27 @@ async function turntable(film) {
   hero.position.set(0, 1.9, 0);
   scene.add(hero);
 
-  // The moon from verse 1, low behind the pedestal.
+  // The moon from verse 1, low on the horizon behind the pedestal. It stands beyond the sea's far edge (the sea is a
+  // disc of radius 150), so the horizon hides its lower part as the real horizon would. (Nearer, the sea's surface
+  // cut across it in front of the horizon, and the moon seemed to sit in the water.)
+  const MOON_R = 28.4, MOON_Y = 7.9, MOON_Z = -185, HORIZON_Y = -0.45; // the horizon's height at the moon, seen from this shot's camera
   const moonTex = new THREE.Texture(await loadImage(`${TEX.base}tex/moon.jpg`));
-  moonTex.colorSpace = THREE.SRGBColorSpace; moonTex.needsUpdate = true;
-  const moon = new THREE.Mesh(new THREE.CircleGeometry(7, 96), new THREE.MeshBasicMaterial({ map: moonTex, color: new THREE.Color(1.15, 1.12, 1.05), fog: false }));
+  moonTex.colorSpace = THREE.SRGBColorSpace; moonTex.anisotropy = 8; moonTex.needsUpdate = true;
+  const moon = new THREE.Mesh(new THREE.CircleGeometry(MOON_R, 128), new THREE.MeshBasicMaterial({ map: moonTex, color: new THREE.Color(1.15, 1.12, 1.05), fog: false }));
   moonTex.center.set(0.5, 0.5);
   // The photo's disc ends just inside its square (at 0.992 of the half-width): fit the disc to the circle, so no dark
   // ring of the photo's black sky shows round the moon's edge.
   moonTex.repeat.set(0.986, 0.986);
-  moon.position.set(0, 3.4, -40);
+  moon.position.set(0, MOON_Y, MOON_Z);
   scene.add(moon);
-  // Keep the moon sharp. It is ten times farther away than the focus, so the shot's depth of field blurred it by about
-  // 4 px at 1080p: that does not show on a small moon, but it made this big one look low-resolution. A stand-in for
-  // the part of the moon above the water draws only into the blur's depth pass (in the picture it writes nothing).
+  // Keep the moon sharp. It is far past the focus, so the shot's depth of field blurred it by about 4 px at 1080p:
+  // that does not show on a small moon, but it made this big one look low-resolution. A stand-in for the part of the
+  // moon above the horizon draws only into the blur's depth pass (in the picture it writes nothing).
   // It is pulled toward the lens to the focus distance, so it covers exactly the moon's pixels and marks them as in
   // focus. Everything else keeps its blur.
-  const a0 = Math.asin(-moon.position.y / 7); // where the sea's surface cuts the disc
+  const a0 = Math.asin((HORIZON_Y - MOON_Y) / MOON_R); // where the horizon cuts the disc
   const above = new THREE.Shape();
-  above.absarc(0, 0, 7, a0, Math.PI - a0, false);
+  above.absarc(0, 0, MOON_R, a0, Math.PI - a0, false);
   above.closePath();
   const moonFocus = new THREE.Mesh(new THREE.ShapeGeometry(above, 64), new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false }));
   moonFocus.frustumCulled = false;
@@ -143,7 +146,7 @@ async function turntable(film) {
       void main() {
         vec3 d = normalize(vDir);
         vec3 c = mix(vec3(${HORIZON.r}, ${HORIZON.g}, ${HORIZON.b}), vec3(0.003, 0.005, 0.014), smoothstep(0.0, 0.45, d.y));
-        c += vec3(0.05, 0.06, 0.08) * pow(max(0.0, dot(d, normalize(vec3(0.0, 0.08, -1.0)))), 12.0); // haze round the moon
+        c += vec3(0.05, 0.06, 0.08) * pow(max(0.0, dot(d, normalize(vec3(0.0, 0.043, -1.0)))), 12.0); // haze round the moon
         gl_FragColor = vec4(d.y < 0.0 ? vec3(${HORIZON.r}, ${HORIZON.g}, ${HORIZON.b}) * 0.6 : c, 1.0);
       }`,
   }));
@@ -153,24 +156,37 @@ async function turntable(film) {
   sea.rotation.x = -Math.PI / 2;
   sea.receiveShadow = true;
   scene.add(sea);
-  // The moon's glade: short streaks of light scattered along a line from under the moon toward us.
+  // The moon's glade: short streaks of light scattered along the moon's path, from under the moon at the horizon to
+  // the pedestal. The path widens with distance (so it keeps about the same width on screen), and the streaks brighten
+  // toward the horizon. (Canvas top = the far end.) The texture runs along the path as the square of the distance, so
+  // the near water, which fills most of the frame, gets most of its detail.
   const gc = document.createElement('canvas');
-  gc.width = 256; gc.height = 1024;
+  gc.width = 256; gc.height = 2048;
   {
     const g = gc.getContext('2d');
-    for (let i = 0; i < 700; i++) {
-      const v = hash1(i * 3 + 1), y = v * 1024, spread = 20 + (1 - v) * 90;
-      const x = 128 + (hash1(i * 3) - 0.5) * 2 * spread * Math.sqrt(hash1(i * 3 + 2));
-      const w = 3 + hash1(i * 5) * (10 + v * 16), a = (0.25 + 0.75 * (1 - v)) * (1 - Math.abs(x - 128) / (spread + 8));
+    for (let i = 0; i < 2600; i++) {
+      const v = hash1(i * 3 + 1), y = v * 2048;
+      const x = 128 + (hash1(i * 3) + hash1(i * 7 + 5) - 1) * 118; // denser along the middle of the path
+      const w = (4 + hash1(i * 5) * 14) * (1 + 0.8 * v), a = (0.3 + 0.7 * (1 - v)) * (1 - Math.abs(x - 128) / 128);
       g.fillStyle = `rgba(215,228,255,${Math.max(0, a).toFixed(3)})`;
-      g.fillRect(x - w / 2, y, w, 1.5 + (1 - v) * 1.5);
+      g.fillRect(x - w / 2, y, w, 1.5 + hash1(i * 11) * 1.5);
     }
   }
   const gladeTex = new THREE.CanvasTexture(gc);
-  gladeTex.colorSpace = THREE.SRGBColorSpace;
-  const glade = new THREE.Mesh(new THREE.PlaneGeometry(4.5, 44), new THREE.MeshBasicMaterial({ map: gladeTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, color: new THREE.Color(0.9, 0.95, 1.1) }));
+  gladeTex.colorSpace = THREE.SRGBColorSpace; gladeTex.anisotropy = 8;
+  const GLADE_NEAR = 2, GLADE_FAR = -150, gladeGeo = new THREE.PlaneGeometry(1, 1, 1, 96);
+  {
+    const pos = gladeGeo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const k = (pos.getY(i) + 0.5) ** 2; // 0 at the near end, 1 at the horizon
+      pos.setX(i, pos.getX(i) * 2 * lerp(0.7, 13.5, k));
+      pos.setY(i, lerp(-GLADE_NEAR, -GLADE_FAR, k)); // local +y becomes world -z once laid flat
+    }
+  }
+  const glade = new THREE.Mesh(gladeGeo, new THREE.MeshBasicMaterial({ map: gladeTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, color: new THREE.Color(0.9, 0.95, 1.1) }));
   glade.rotation.x = -Math.PI / 2;
-  glade.position.set(0, 0.012, -20);
+  glade.position.set(0, 0.012, 0);
+  glade.frustumCulled = false;
   scene.add(glade);
   scene.fog.color.copy(HORIZON);
 
@@ -302,7 +318,7 @@ export function shots(S, T) {
     const v = easeInOut(clamp((t - tI) / (tJoin - tI)));
     return {
       pos: [lerp(lerp(0.6, -1.2, u), -0.85, v), lerp(lerp(2.9, 2.55, u), 2.25, v), lerp(lerp(7.5, 4.3, u), 3.05, v)],
-      look: [0, lerp(lerp(3.35, 1.8, u), 1.9, v), lerp(-40, 0, u)],
+      look: [0, lerp(lerp(4.14, 1.8, u), 1.9, v), lerp(-40, 0, u)], // starts on the moon's centre
       fov: lerp(16, 30, u),
     };
   };

@@ -446,6 +446,24 @@ export async function seaStage(film) {
   const moon = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), moonMat);
   moon.renderOrder = -8; moon.frustumCulled = false;
   scene.add(moon);
+  // Keep the moon sharp. At "infinity", far past the focus, the depth of field smeared its bright craters into rings
+  // of dots and softened the photo, so it looked low-resolution. A stand-in disc draws only into the blur's depth pass
+  // (in the picture it writes nothing). It is pulled toward the lens to the focus distance, so it covers exactly the
+  // moon's pixels and marks them as in focus. Everything else keeps its blur. (The outro's moon does the same.)
+  const moonFocus = new THREE.Mesh(new THREE.CircleGeometry(0.496, 96), new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false }));
+  moonFocus.frustumCulled = false;
+  {
+    const lens = new THREE.Vector3(), view = new THREE.Vector3(), toLens = new THREE.Matrix4(), shrink = new THREE.Matrix4(), back = new THREE.Matrix4();
+    moonFocus.onBeforeRender = (r, sc, camera) => {
+      lens.setFromMatrixPosition(camera.matrixWorld);
+      view.setFromMatrixPosition(moon.matrixWorld).applyMatrix4(camera.matrixWorldInverse);
+      const k = Math.min(1, film.bokeh.uniforms.focus.value / Math.max(1e-3, -view.z));
+      // scale about the lens: every point keeps its place on screen and moves to the focus distance
+      toLens.makeTranslation(-lens.x, -lens.y, -lens.z); shrink.makeScale(k, k, k); back.makeTranslation(lens.x, lens.y, lens.z);
+      moonFocus.matrixWorld.copy(moon.matrixWorld).premultiply(toLens).premultiply(shrink).premultiply(back);
+    };
+  }
+  moon.add(moonFocus);
   const halo = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: glowSprite(256, [[0, 1], [0.25, 0.5], [0.5, 0.12], [1, 0]]), transparent: true, depthWrite: false, fog: false, blending: THREE.AdditiveBlending, color: new THREE.Color(0.16, 0.19, 0.19) }));
   halo.renderOrder = -7; halo.frustumCulled = false;
   scene.add(halo);

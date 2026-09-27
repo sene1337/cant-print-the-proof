@@ -51,8 +51,9 @@ export function shots(S, T) {
     const narrow = Math.max(1, (16 / 9) / c.aspect);
     saltCam({ ...c, aspect: (16 / 9) / Math.pow(narrow, 0.45) }, cam, st);
   }), (s, c) => {
-    const az = lerp(24, 16, easeOut(c.u));
-    s.moonAz = -az + 14; s.moonEl = 6.5; s.moonSize = 8; // beside the pour, never behind it
+    // The moon keeps its place in the sky while the camera turns, as a real moon would (tying it to the camera's
+    // turn held it still on screen while the sea slid past). Beside the pour for the whole move, never behind it.
+    s.moonAz = -6; s.moonEl = 6.5; s.moonSize = 8;
     s.seaU.uGlint.value = 0.8;
     s.salt.group.visible = true;
     s.salt.group.position.set(...saltAt);
