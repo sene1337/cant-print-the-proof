@@ -7,7 +7,9 @@ import { Dust } from '../props/dust.js';
 import { banknote } from '../tex.js';
 import { hash1, clamp } from '../util.js';
 
-// Build extruded glyph geometry from outlines in data/glyphs.json (Playfair Display Black, OFL).
+// Build extruded glyph geometry from outlines in data/glyphs.json (Playfair Display Black, OFL, lining figures).
+// The bevel grows outward from the true outline: an inward bevel spikes across the face at the sharp corners of
+// Playfair's 2 (the same fix as the simulator's year, js/sim/scene.js).
 function glyphGeometry(g, scale, depth, bevel) {
   const path = new THREE.ShapePath();
   const s = scale / 1000;
@@ -18,7 +20,7 @@ function glyphGeometry(g, scale, depth, bevel) {
     else if (c[0] === 'C') path.bezierCurveTo(c[1] * s, c[2] * s, c[3] * s, c[4] * s, c[5] * s, c[6] * s);
   }
   const shapes = path.toShapes(false);
-  const geo = new THREE.ExtrudeGeometry(shapes, { depth, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel * 0.8, bevelOffset: -bevel * 0.8, bevelSegments: 4, curveSegments: 10 });
+  const geo = new THREE.ExtrudeGeometry(shapes, { depth, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel * 0.8, bevelOffset: 0, bevelSegments: 4, curveSegments: 12 });
   geo.translate(0, 0, -depth / 2);
   geo.computeVertexNormals();
   return geo;

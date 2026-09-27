@@ -1,6 +1,7 @@
 """Extracts glyph outlines from an open-licensed font, so the site can extrude solid 3D text without a font loader.
 
-data/glyphs.json: the film's digits and punctuation, in the font's default old-style figures.
+data/glyphs.json: the film's digits and punctuation, in lining figures (all the same height), so 21,000,000 reads as
+one number standing on the ground.
 data/sim-glyphs.json: the simulator's years in lining figures (all the same height), plus the letters of NOT YET.
 
 Font: Playfair Display Black (SIL Open Font License), from @fontsource/playfair-display.
@@ -13,7 +14,7 @@ from fontTools.ttLib import TTFont
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, 'node_modules/@fontsource/playfair-display/files/playfair-display-latin-900-normal.woff')
-FILES = {'glyphs.json': ('0123456789,.', False), 'sim-glyphs.json': ('0123456789NOTYE ', True)}
+FILES = {'glyphs.json': ('0123456789,.', True), 'sim-glyphs.json': ('0123456789NOTYE ', True)}
 
 
 class Rec(BasePen):

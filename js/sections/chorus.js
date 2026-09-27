@@ -227,7 +227,8 @@ function chorus(S, T, n, t0, tEnd) {
   //    night and a low moon in chorus 1, a red gale in chorus 2, sunrise in chorus 3.
   // Frame the whole number, whatever the frame's shape: distance so its width and height fit with a margin.
   // cx moves the aim (and the camera with it) along the number.
-  const fitNumber = (c, cam, { scale = 1, az = 0, el = 6, margin = 1.14, fov = 32, lift = 0.95, cx = 0 } = {}) => {
+  // (lift is the aim's height: the lining digits stand 1.59 tall on a 0.62 base, so 1.2 sits just under their middle)
+  const fitNumber = (c, cam, { scale = 1, az = 0, el = 6, margin = 1.14, fov = 32, lift = 1.2, cx = 0 } = {}) => {
     const W = c.film.stages.get('monument').numerals.userData.width * scale, H = 2.2 * scale;
     const vf = (fov * Math.PI) / 180, hf = 2 * Math.atan(Math.tan(vf / 2) * c.aspect);
     const d = Math.max((W * margin) / 2 / Math.tan(hf / 2), (H * margin) / 2 / Math.tan(vf / 2));
@@ -241,7 +242,7 @@ function chorus(S, T, n, t0, tEnd) {
     // "Twenty-one": 2 and 1 rise out of the still water under the moon.
     const rise = (t, t0, i) => easeOutBack(clamp((t - t0 - i * 0.12) / 0.55), 1.4);
     const night = (s) => { s.sky('night'); s.rim.color.set(0x9db8ff); s.rim.intensity = 2.6; s.dust.visible = false; };
-    C(t21, 'monument', orbitCam({ target: (c) => [x21(c), 0.9, 0], dist: [6.2, 5.2], az: [-18, -8], el: [5, 3], fov: 30 }),
+    C(t21, 'monument', orbitCam({ target: (c) => [x21(c), 1.3, 0], dist: [6.2, 5.2], az: [-18, -8], el: [5, 3], fov: 30 }),
       (s, c) => {
         night(s);
         s.parts.forEach((p, i) => { p.visible = i < 2; });
