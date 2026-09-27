@@ -610,7 +610,10 @@ export async function noteSignStage(film) {
         d.position.set((hash1(i * 3) - 0.5) * 1.6 * e, SHEET_T + 0.004 + e * 2.4 + a * 0.12, (hash1(i * 3 + 1) - 0.5) * 1.2 * e);
         // they rise almost flat, so their shading stays steady (tilting notes flicker as they catch the lamp)
         d.rotation.set(-Math.PI / 2 + (hash1(i * 3 + 2) - 0.5) * 0.25 * e, (hash1(i * 5) - 0.5) * 0.5 * e, (hash1(i * 7) - 0.5) * 0.15 * e);
-        d.scale.setScalar(S);
+        // A copy peels off flat and takes on its flutter and curl only as it clears the note below: scaling the
+        // sheet's thickness axis scales its bend. (At full bend from the start, a copy dipped through its neighbour.)
+        const f = Math.min(1, a / 0.35);
+        d.scale.set(S, S, S * f * f * (3 - 2 * f));
       });
     },
     // One note becomes two, four, eight... in the air around centre c. At each split every note buds a copy that
