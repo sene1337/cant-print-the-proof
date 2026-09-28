@@ -36,7 +36,8 @@ a:focus-visible, button:focus-visible, .scrub:focus-visible, summary:focus-visib
 
 /* The player: always 16:9, as large as the window allows. */
 .stage { position: relative; width: min(100%, calc(100svh * 16 / 9)); aspect-ratio: 16 / 9; margin: 0 auto; background: #000; overflow: hidden; }
-.stage canvas, .poster { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.stage canvas, .stage video, .poster { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.stage video { object-fit: contain; background: #000; }
 .poster { object-fit: cover; transition: opacity 0.6s ease; z-index: 1; }
 .cover { z-index: 2; }
 .poster.gone { opacity: 0; }

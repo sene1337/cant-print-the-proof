@@ -14,9 +14,19 @@ import { fmtInt } from './util.js';
 const params = new URLSearchParams(location.search);
 const CAPTURE = params.has('capture');
 const BASE = './';
+// Phones and tablets play the rendered film instead of drawing it live: building every scene at load takes about
+// 2 GB of canvas and texture memory, and iOS Safari closes a tab that size before it can play. ?live=1 overrides.
+const PHONE = !CAPTURE && !params.has('live') && (navigator.maxTouchPoints > 1 || window.matchMedia('(pointer: coarse)').matches);
+const PHONE_VIDEO = `${BASE}media/film-720p.mp4`;
 
 async function boot() {
   if (CAPTURE) document.body.classList.add('capture');
+  if (PHONE) {
+    const chain = await Chain.load(`${BASE}data/chain.json`);
+    phoneText();
+    player(null, chain, null, document.getElementById('hud'), 0, 0);
+    return;
+  }
   const [timing, chain] = await Promise.all([Timing.load(`${BASE}data/timing.json`), Chain.load(`${BASE}data/chain.json`)]);
   const dbg = (m) => { if (params.has('debug')) console.log('[boot]', m, (performance.now() / 1000).toFixed(2)); };
   // Live: show how far loading has got on the Play button, and give the page a frame to paint it between steps.
@@ -94,13 +104,31 @@ async function boot() {
   player(film, chain, hg, hud, W, H);
 }
 
+// On a phone the page says what it plays: the same film, rendered from this code.
+function phoneText() {
+  const fine = document.getElementById('fine');
+  if (fine) fine.textContent = 'Rendered frame by frame from this page’s own code. Sound on.';
+  const made = document.getElementById('madeText');
+  if (made) made.textContent = 'On a computer, there is no video file on this page: the film is over fourteen thousand lines of JavaScript that draw each frame with three.js as the song plays, on your own graphics chip. The same code, run frame by frame, renders the video file, and that file is what plays on phones and tablets, because drawing the film live needs more memory than a phone browser gives a page. The blocks are the same either way, and you can verify them below. The coins are photographed museum pieces, all public domain. The song was generated with ElevenLabs Music.';
+}
+
+// film: the live film (a computer), or null: the rendered file plays in a <video> (a phone or tablet).
 function player(film, chain, hg, hud, W, H) {
   const $ = (id) => document.getElementById(id);
-  const audio = new Audio(`${BASE}media/song.mp3`);
-  audio.preload = 'auto';
+  let audio;
+  if (film) {
+    audio = new Audio(`${BASE}media/song.mp3`);
+    audio.preload = 'auto';
+  } else {
+    audio = $('vid');
+    audio.src = PHONE_VIDEO;
+    audio.preload = 'metadata';
+    $('gl').hidden = true;
+    hud.hidden = true;
+  }
   const playBtn = $('play'), label = $('playLabel'), cover = $('cover'), poster = $('poster'), ui = $('ui');
   const pauseBtn = $('pause'), scrub = $('scrub'), fill = $('scrubFill'), clock = $('clock');
-  const dur = film.T.duration;
+  const dur = film ? film.T.duration : chain.n / chain.fps;
   let running = false;
   let lastAudioT = 0, lastWall = performance.now();
 
@@ -121,6 +149,7 @@ function player(film, chain, hg, hud, W, H) {
   let pr = Math.min(window.devicePixelRatio || 1, 1.5);
   let slow = 0, level = 0, lastFrame = 0;
   function adapt(dt) {
+    if (!film) return;
     if (dt > 0 && dt < 250) slow = slow * 0.95 + (dt > 26 ? 1 : 0) * 0.05;
     if (slow > 0.6 && level < 3) {
       level++;
@@ -133,7 +162,7 @@ function player(film, chain, hg, hud, W, H) {
   }
   function resize() {
     const el = $('stage');
-    if (!el.clientWidth || !el.clientHeight) return;
+    if (!film || !el.clientWidth || !el.clientHeight) return;
     film.setSize(el.clientWidth, el.clientHeight, pr);
     hud.width = Math.round(el.clientWidth * pr); hud.height = Math.round(el.clientHeight * pr);
   }
@@ -142,9 +171,11 @@ function player(film, chain, hg, hud, W, H) {
 
   function draw() {
     const t = now();
-    film.render(t);
-    const shot = film.shotAt(t);
-    drawHud(hg, hud.width, hud.height, chain, t, { alpha: shot.fx?.hud ?? 1 });
+    if (film) {
+      film.render(t);
+      const shot = film.shotAt(t);
+      drawHud(hg, hud.width, hud.height, chain, t, { alpha: shot.fx?.hud ?? 1 });
+    }
     fill.style.width = `${(t / dur) * 100}%`;
     scrub.setAttribute('aria-valuenow', Math.round(t));
     clock.textContent = fmt(t);
@@ -166,6 +197,7 @@ function player(film, chain, hg, hud, W, H) {
   }
 
   async function play() {
+    if (!film) audio.hidden = false;
     try { await audio.play(); } catch (e) { label.textContent = 'Tap to play'; return; }
     cover.classList.add('gone');
     poster.classList.add('gone');
@@ -182,7 +214,7 @@ function player(film, chain, hg, hud, W, H) {
   const seekTo = (x) => {
     audio.currentTime = Math.max(0, Math.min(dur - 0.05, x));
     lastAudioT = audio.currentTime; lastWall = performance.now();
-    if (!running) { cover.classList.add('gone'); poster.classList.add('gone'); ui.hidden = false; start(); }
+    if (!running) { if (!film) audio.hidden = false; cover.classList.add('gone'); poster.classList.add('gone'); ui.hidden = false; start(); }
     if (audio.paused) draw();
   };
   const seekEvent = (e) => { const r = scrub.getBoundingClientRect(); seekTo(((e.clientX - r.left) / r.width) * dur); };

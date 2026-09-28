@@ -1,8 +1,10 @@
 # Can't Print the Proof
 
 A music video about the history of money, from shells and stone to gold, paper and Bitcoin.
-It plays **live in your browser**: there is no video file on the page. Every frame is drawn with
-three.js as the song plays, and **every frame is a mined proof-of-work block** you can verify.
+On a computer it plays **live in your browser**: there is no video file on the page. Every frame is drawn with
+three.js as the song plays, and **every frame is a mined proof-of-work block** you can verify. Phones and tablets play
+`media/film-720p.mp4` instead, rendered from the same code: drawing the film live builds about 2 GB of canvases and
+textures at load, more than a phone browser allows a page (add `?live=1` to try it anyway).
 
 **Watch it:** https://sene1337.github.io/cant-print-the-proof/
 
@@ -99,6 +101,15 @@ node tools/render.mjs --w 1080 --h 1920 --name vertical   # a vertical cut
 
 The renderer opens the same page in headless Chrome, asks it for each frame by song time, and joins the frames
 with the song using ffmpeg. The audio in the video file is the approved master with a peak limiter at -1 dBTP.
+
+The phone file is a 720p render of the site's current code, two-pass H.264 at 1.75 Mbit/s (about 43 MB):
+
+```
+node tools/render.mjs --w 1280 --h 720 --workers 2 --name film-1280x720
+ffmpeg -i out/film-1280x720-master.mp4 -c:v libx264 -preset veryslow -b:v 1750k -pass 1 -tune grain -an -f mp4 /dev/null
+ffmpeg -i out/film-1280x720-master.mp4 -c:v libx264 -preset veryslow -b:v 1750k -maxrate 3000k -bufsize 6000k -pass 2 \
+  -tune grain -c:a aac -b:a 128k -movflags +faststart media/film-720p.mp4
+```
 
 ## How the film is built
 
