@@ -1,15 +1,17 @@
 // Boot: load the song timing and the chain, build the stages, then either play live or serve frames to the renderer.
-import { Film } from './film.js';
-import { Timing } from './timing.js';
+// The film's code is imported only where it runs (a phone never loads it: fewer files to fetch, parse, or fail).
 import { Chain } from './chain.js';
-import { preload } from './tex.js';
-import { drawHud } from './hud.js';
-import { buildStory, loadSections, FAILED } from './story.js';
-import { lookShots } from './lookdev.js';
-import { goldStage } from './stages/gold.js';
-import { paperStage } from './stages/paper.js';
-import { proofStage } from './stages/proof.js';
 import { fmtInt } from './util.js';
+
+let drawHud = null;
+async function filmModules() {
+  const [film, timing, tex, hud, story, look, gold, paper, proof] = await Promise.all([import('./film.js'), import('./timing.js'),
+    import('./tex.js'), import('./hud.js'), import('./story.js'), import('./lookdev.js'), import('./stages/gold.js'),
+    import('./stages/paper.js'), import('./stages/proof.js')]);
+  drawHud = hud.drawHud;
+  return { Film: film.Film, Timing: timing.Timing, preload: tex.preload, buildStory: story.buildStory, loadSections: story.loadSections,
+    FAILED: story.FAILED, lookShots: look.lookShots, goldStage: gold.goldStage, paperStage: paper.paperStage, proofStage: proof.proofStage };
+}
 
 const params = new URLSearchParams(location.search);
 const CAPTURE = params.has('capture');
@@ -27,6 +29,7 @@ async function boot() {
     player(null, chain, null, document.getElementById('hud'), 0, 0);
     return;
   }
+  const { Film, Timing, preload, buildStory, loadSections, FAILED, lookShots, goldStage, paperStage, proofStage } = await filmModules();
   const [timing, chain] = await Promise.all([Timing.load(`${BASE}data/timing.json`), Chain.load(`${BASE}data/chain.json`)]);
   const dbg = (m) => { if (params.has('debug')) console.log('[boot]', m, (performance.now() / 1000).toFixed(2)); };
   // Live: show how far loading has got on the Play button, and give the page a frame to paint it between steps.
